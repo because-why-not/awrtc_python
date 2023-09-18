@@ -72,7 +72,7 @@ class NetworkEvent:
         return output
     
     def data_to_text(self):
-        return self._data.decode('utf-16')
+        return self._data.decode('utf-16-le')
 
     @staticmethod
     def parse_from_string(str):
@@ -108,7 +108,7 @@ class NetworkEvent:
         elif data_type == NetEventDataType.UTF16String:
             length = struct.unpack('<i', arr[4:8])[0]
             str_data = arr[8:8+(length*2)]
-            data = str_data.decode('utf-16')
+            data = str_data.decode('utf-16-le')
         elif data_type != NetEventDataType.Null:
             raise ValueError('Message has an invalid data type flag: ' + str(data_type))
         return NetworkEvent(type, ConnectionId(id), data)
@@ -122,12 +122,11 @@ class NetworkEvent:
             result = bytearray(type_blen)
         elif isinstance(evt._data, str):
             data_type = NetEventDataType.UTF16String
-            encoded_str = evt._data.encode('utf-16')
-            #python seems to add a 2 byte prefix we have to remove
-            blen = len(encoded_str)-2
+            encoded_str = evt._data.encode('utf-16-le')
+            blen = len(encoded_str)
             result = bytearray(type_blen + 4 + blen)
             result[4:8] = struct.pack('<i', blen//2)
-            result[8:] = encoded_str[2:]
+            result[8:] = encoded_str
         else:
             data_type = NetEventDataType.ByteArray
             blen = len(evt._data)
@@ -184,7 +183,11 @@ class WebsocketNetwork:
         await self._internal_send(msg)
     
     async def send_text(self, text):
-        text_data = text.encode('utf-16')
+        text_data = text.encode('utf-16-le')
+        # without utf-16-le we are getting a EF BB BF as prefix here.
+        # This appears to be an UTF-8 prefix to mark byte order
+        # https://en.wikipedia.org/wiki/Byte_order_mark
+        
         evt = NetworkEvent(NetEventType.ReliableMessageReceived, ConnectionId(1), text_data)
         await self.send_network_event(evt)
     
