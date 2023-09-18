@@ -2,15 +2,48 @@ from enum import Enum
 import asyncio
 from websocket_network import WebsocketNetwork, NetworkEvent, NetEventType
 
-from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
+from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, RTCConfiguration, RTCIceServer
 import json
+import time
+import logging
+import re
+from aiortc import RTCRtpReceiver, RTCRtpTransceiver
+import cv2
+
+## ENABLE THIS LINE TO SEE DETAILED DEBUG LOGS IN THE TERMINAL
+# logging.basicConfig(level=logging.DEBUG)
+
+
+uri = 'ws://IP_ADDRESS_SERVER:PORT_NO/callapp'
+ROOM_NAME = 'abc123'
+video_h = 1920
+video_w = 1080
+fps = 30
+file_path = 'video_recorded/recording1.mp4'
+MAX_FRAMES = 600
+
+
+configuration = RTCConfiguration(
+    iceServers=[
+        RTCIceServer(urls='stun:stun.l.google.com:19302'),
+		RTCIceServer(urls='stun:stun1.l.google.com:19302'),
+        RTCIceServer(urls='stun:stun2.l.google.com:19302'),
+        RTCIceServer(urls='stun:stun3.l.google.com:19302'),
+        RTCIceServer(urls='stun:stun4.l.google.com:19302'),
+        RTCIceServer(
+            urls='turn:t.y-not.app:443',
+            username='user_nov',
+            credential='pass_nov'
+        )
+    ]
+)
 
 
 
-uri = 'ws://192.168.1.3:12776'
 network : WebsocketNetwork = None
 
-peer = RTCPeerConnection()
+
+peer = RTCPeerConnection(configuration)
 global dc1
 dc1 = None
 global dc2
@@ -21,6 +54,98 @@ setting_remote = False
 
 global message_buffer
 message_buffer = []
+
+
+def extract_codecs(sdp):
+    lines = sdp.split('\n')
+    audio_codecs = []
+    video_codecs = []
+    current_media = None
+
+    for line in lines:
+        line = line.strip()
+        
+
+        if line.startswith('m=audio'):
+            current_media = 'audio'
+        elif line.startswith('m=video'):
+            current_media = 'video'
+
+        if line.startswith('a=rtpmap:'):
+            codec = line.split(' ')[1]#.split('/')[0]
+            if current_media == 'audio':
+                audio_codecs.append(codec)
+            elif current_media == 'video':
+                video_codecs.append(codec)
+
+    return audio_codecs, video_codecs
+
+
+
+def parse_ice_candidate(candidate, sdpMid, sdpMLineIndex):
+    ## this function doesn't work very well!!
+    m = re.match(r'candidate:(\S+) (\d) (\S+) (\d+) (\S+) (\d+) typ (\S+)', candidate)
+    if not m:
+        raise ValueError('Invalid candidate')
+    return RTCIceCandidate(
+        foundation=m.group(1),
+        component=m.group(2),
+        protocol=m.group(3),
+        priority=int(m.group(4)),
+        ip=m.group(5),
+        port=int(m.group(6)),
+        type=m.group(7),
+        # tcpType=m.group(9) if 'tcptype' in candidate else None,
+
+        sdpMid=sdpMid,
+        sdpMLineIndex=sdpMLineIndex
+    )
+
+async def handle_video_track(track):
+    nframe = 0
+    start_time = time.time()
+    # fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')
+    # writer = cv2.VideoWriter(file_path, fourcc, fps, (video_w, video_h))
+    prev_frame_time = 1
+
+    while True:
+        if not peer.connectionState == "connected":
+            print('peer connectionstate :', peer.connectionState)
+            time.sleep(0.5)
+            frame = await track.recv()
+
+            continue
+        frame = await track.recv()
+        
+        # Convert the frame to a numpy array
+        img = frame.to_ndarray(format="bgr24")
+
+        # THIS PART ALLOWS TO SAVE THE FEED AS VIDEO
+        # if nframe<MAX_FRAMES:
+        #     writer.write(img)
+        # else:
+        #     print('release video writer')
+        #     writer.release()
+
+        # Print the shape of the frame
+        # if peer._iceConnection.state == 'completed' or peer._iceConnection.state == 'failed':
+        #     pair = peer._iceConnection.selected_pair
+        #     print(pair)
+             
+        # print(img.shape, nframe/(time.time()-start_time), peer.connectionState )
+
+        # print('Average Frame rate: ', nframe/(time.time()-start_time) )
+        print(img.shape,'Current Frame rate: ', 1/(time.time()-prev_frame_time), ' Average Frame rate: ', nframe/(time.time()-start_time) )
+        prev_frame_time = time.time()
+
+        nframe +=  1
+
+
+        # Optionally, you can display the video frame using OpenCV
+        # cv2.imshow('Video Frame', img)
+        # cv2.waitKey(1)
+
+
 
 def append_candidate(sdp, candidate):
     sdp += 'a={}\r\n'.format(candidate)
@@ -33,24 +158,50 @@ def convert_json_to_sdp(json_messages):
         if 'candidate' in msg:
             sdp_buffer = append_candidate(sdp_buffer, msg['candidate'])
     return sdp_buffer
+
+
+
 async def create_offer():
     global dc1
     global dc2
+
+
     dc1 = peer.createDataChannel(label="reliable")
     dc2 = peer.createDataChannel(label="unreliable")
+    
+    peer.addTransceiver("audio", direction="recvonly")  # if you want to receive audio
+    peer.addTransceiver("video", direction="recvonly")  # if you want to receive video
+
+    
+    @peer.on("track")
+    def on_track(track):
+        print("=================> on_track=================== ", track.kind)
+        if track.kind == "video":
+            print("Video track was added")
+            # Handle video track (e.g., attaching to a media player, etc.)
+            asyncio.ensure_future(handle_video_track(track))
+
+        elif track.kind == "audio":
+            print("Audio track was added")
+            # Handle audio track
 
     @dc1.on("message")
     def on_message(message):
+
+        message = message.decode('utf-8')
         print("dc1", message)
     @dc2.on("message")
     def on_message(message):
         print("dc2", message)
 
+
+
+
     offer = await peer.createOffer()
     await peer.setLocalDescription(offer)
     data = {"sdp":peer.localDescription.sdp, "type":"offer"}
     offer_w_ice =  json.dumps(data)
-    print(offer_w_ice)
+    # print(offer_w_ice)
     return offer_w_ice
 
 async def my_event_handler(evt: NetworkEvent):
@@ -60,9 +211,8 @@ async def my_event_handler(evt: NetworkEvent):
         # got connected. For now we assume the remote side is already in the waiting state
         # this means we can just send an offer
 
-        #test_offer = '{"sdp":"v=0\r\no=- 2871846415274796188 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0 1 2\r\na=extmap-allow-mixed\r\na=msid-semantic: WMS\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111 63 9 102 0 8 13 110 126\r\nc=IN IP4 0.0.0.0\r\na=rtcp:9 IN IP4 0.0.0.0\r\na=ice-ufrag:DCj/\r\na=ice-pwd:eGcniT3aIT51cU6E1xfx8K9F\r\na=ice-options:trickle\r\na=fingerprint:sha-256 90:9C:9B:F4:71:B8:9F:6E:BA:D9:5C:84:79:B0:30:D5:83:29:57:3C:FD:56:AE:FD:D8:2E:38:26:A9:9B:A3:9B\r\na=setup:actpass\r\na=mid:0\r\na=extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level\r\na=extmap:2 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time\r\na=extmap:3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01\r\na=extmap:4 urn:ietf:params:rtp-hdrext:sdes:mid\r\na=recvonly\r\na=rtcp-mux\r\na=rtpmap:111 opus/48000/2\r\na=rtcp-fb:111 transport-cc\r\na=fmtp:111 minptime=10;useinbandfec=1\r\na=rtpmap:63 red/48000/2\r\na=fmtp:63 111/111\r\na=rtpmap:9 G722/8000\r\na=rtpmap:102 ILBC/8000\r\na=rtpmap:0 PCMU/8000\r\na=rtpmap:8 PCMA/8000\r\na=rtpmap:13 CN/8000\r\na=rtpmap:110 telephone-event/48000\r\na=rtpmap:126 telephone-event/8000\r\nm=video 9 UDP/TLS/RTP/SAVPF 96 97 98 99 100 101 35 36 37 38 39 40 41 42 127 103 104 43\r\nc=IN IP4 0.0.0.0\r\na=rtcp:9 IN IP4 0.0.0.0\r\na=ice-ufrag:DCj/\r\na=ice-pwd:eGcniT3aIT51cU6E1xfx8K9F\r\na=ice-options:trickle\r\na=fingerprint:sha-256 90:9C:9B:F4:71:B8:9F:6E:BA:D9:5C:84:79:B0:30:D5:83:29:57:3C:FD:56:AE:FD:D8:2E:38:26:A9:9B:A3:9B\r\na=setup:actpass\r\na=mid:1\r\na=extmap:14 urn:ietf:params:rtp-hdrext:toffset\r\na=extmap:2 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time\r\na=extmap:13 urn:3gpp:video-orientation\r\na=extmap:3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01\r\na=extmap:5 http://www.webrtc.org/experiments/rtp-hdrext/playout-delay\r\na=extmap:6 http://www.webrtc.org/experiments/rtp-hdrext/video-content-type\r\na=extmap:7 http://www.webrtc.org/experiments/rtp-hdrext/video-timing\r\na=extmap:8 http://www.webrtc.org/experiments/rtp-hdrext/color-space\r\na=extmap:4 urn:ietf:params:rtp-hdrext:sdes:mid\r\na=extmap:10 urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id\r\na=extmap:11 urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id\r\na=recvonly\r\na=rtcp-mux\r\na=rtcp-rsize\r\na=rtpmap:96 VP8/90000\r\na=rtcp-fb:96 goog-remb\r\na=rtcp-fb:96 transport-cc\r\na=rtcp-fb:96 ccm fir\r\na=rtcp-fb:96 nack\r\na=rtcp-fb:96 nack pli\r\na=rtpmap:97 rtx/90000\r\na=fmtp:97 apt=96\r\na=rtpmap:98 VP9/90000\r\na=rtcp-fb:98 goog-remb\r\na=rtcp-fb:98 transport-cc\r\na=rtcp-fb:98 ccm fir\r\na=rtcp-fb:98 nack\r\na=rtcp-fb:98 nack pli\r\na=fmtp:98 profile-id=0\r\na=rtpmap:99 rtx/90000\r\na=fmtp:99 apt=98\r\na=rtpmap:100 VP9/90000\r\na=rtcp-fb:100 goog-remb\r\na=rtcp-fb:100 transport-cc\r\na=rtcp-fb:100 ccm fir\r\na=rtcp-fb:100 nack\r\na=rtcp-fb:100 nack pli\r\na=fmtp:100 profile-id=2\r\na=rtpmap:101 rtx/90000\r\na=fmtp:101 apt=100\r\na=rtpmap:35 VP9/90000\r\na=rtcp-fb:35 goog-remb\r\na=rtcp-fb:35 transport-cc\r\na=rtcp-fb:35 ccm fir\r\na=rtcp-fb:35 nack\r\na=rtcp-fb:35 nack pli\r\na=fmtp:35 profile-id=1\r\na=rtpmap:36 rtx/90000\r\na=fmtp:36 apt=35\r\na=rtpmap:37 VP9/90000\r\na=rtcp-fb:37 goog-remb\r\na=rtcp-fb:37 transport-cc\r\na=rtcp-fb:37 ccm fir\r\na=rtcp-fb:37 nack\r\na=rtcp-fb:37 nack pli\r\na=fmtp:37 profile-id=3\r\na=rtpmap:38 rtx/90000\r\na=fmtp:38 apt=37\r\na=rtpmap:39 AV1/90000\r\na=rtcp-fb:39 goog-remb\r\na=rtcp-fb:39 transport-cc\r\na=rtcp-fb:39 ccm fir\r\na=rtcp-fb:39 nack\r\na=rtcp-fb:39 nack pli\r\na=rtpmap:40 rtx/90000\r\na=fmtp:40 apt=39\r\na=rtpmap:41 AV1/90000\r\na=rtcp-fb:41 goog-remb\r\na=rtcp-fb:41 transport-cc\r\na=rtcp-fb:41 ccm fir\r\na=rtcp-fb:41 nack\r\na=rtcp-fb:41 nack pli\r\na=fmtp:41 profile=1\r\na=rtpmap:42 rtx/90000\r\na=fmtp:42 apt=41\r\na=rtpmap:127 red/90000\r\na=rtpmap:103 rtx/90000\r\na=fmtp:103 apt=127\r\na=rtpmap:104 ulpfec/90000\r\na=rtpmap:43 flexfec-03/90000\r\na=rtcp-fb:43 goog-remb\r\na=rtcp-fb:43 transport-cc\r\na=fmtp:43 repair-window=10000000\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=ice-ufrag:DCj/\r\na=ice-pwd:eGcniT3aIT51cU6E1xfx8K9F\r\na=ice-options:trickle\r\na=fingerprint:sha-256 90:9C:9B:F4:71:B8:9F:6E:BA:D9:5C:84:79:B0:30:D5:83:29:57:3C:FD:56:AE:FD:D8:2E:38:26:A9:9B:A3:9B\r\na=setup:actpass\r\na=mid:2\r\na=sctp-port:5000\r\na=max-message-size:262144\r\n","type":"offer"}'
         test_offer = await create_offer()
-        print("sending : " + test_offer)
+        # print("sending : " + test_offer)
         await network.send_text(test_offer)
 
     if evt.type == NetEventType.ReliableMessageReceived:
@@ -71,29 +221,57 @@ async def my_event_handler(evt: NetworkEvent):
         # all other messages should be answer & ice candidates
         global message_buffer
         msg = evt.data_to_text()
-        print("in msg: "+ msg)
+        # print("in msg: "+ msg)
         global setting_remote
         if 'sdp' in msg and setting_remote == False:
             setting_remote = True
             json_msg = json.loads(msg)
+            print("====================> SDP received... Printing supported codecs")
+            
+            audio, video = extract_codecs(json_msg.get('sdp'))
+            print("Audio Codecs:", audio)
+            print("Video Codecs:", video)
+            
+
             await peer.setRemoteDescription(RTCSessionDescription(json_msg["sdp"], json_msg["type"]))
+
+
         if 'candidate' in msg:
             candidate_dict = json.loads(msg)
-            candidate = RTCIceCandidate(
-                component=candidate_dict.get("sdpMLineIndex"),
-                foundation=candidate_dict.get("candidate").split()[0],
-                ip=candidate_dict.get("candidate").split()[4],
-                port=int(candidate_dict.get("candidate").split()[5]),
-                priority=int(candidate_dict.get("candidate").split()[3]),
-                protocol=candidate_dict.get("candidate").split()[2],
-                relatedAddress=candidate_dict.get("candidate").split()[7] if 'raddr' in candidate_dict.get("candidate") else None,
-                relatedPort=int(candidate_dict.get("candidate").split()[9]) if 'rport' in candidate_dict.get("candidate") else None,
-                tcpType=None,
-                type=candidate_dict.get("candidate").split()[7] if 'typ' in candidate_dict.get("candidate") else None,
-            )
-            candidate.sdpMid = candidate_dict.get("sdpMid")
-            candidate.sdpMLineIndex = candidate_dict.get("sdpMLineIndex")
-            await peer.addIceCandidate(candidate)
+            candidate_split = candidate_dict.get("candidate").split()
+            protocol = candidate_split[2]
+            type = candidate_split[7]
+            print(" ============> Candidate protocol", protocol, " type:", type)
+            # if type == "host":
+            #     return
+            try:
+                candidate = RTCIceCandidate(
+                    component=candidate_dict.get("sdpMLineIndex"),
+                    foundation=candidate_dict.get("candidate").split()[0],
+                    ip=candidate_dict.get("candidate").split()[4],
+                    port=int(candidate_dict.get("candidate").split()[5]),
+                    priority=int(candidate_dict.get("candidate").split()[3]),
+                    protocol=candidate_dict.get("candidate").split()[2],
+                    relatedAddress=candidate_dict.get("candidate").split()[9] if 'raddr' in candidate_dict.get("candidate") else None,
+                    relatedPort=int(candidate_dict.get("candidate").split()[11]) if 'rport' in candidate_dict.get("candidate") else None,
+                    tcpType=candidate_dict.get("candidate").split()[9] if 'tcptype' in candidate_dict.get("candidate") else None,
+                    type=candidate_dict.get("candidate").split()[7] if 'typ' in candidate_dict.get("candidate") else None,
+                )
+                # print(candidate_dict)
+
+                candidate.sdpMid = candidate_dict.get("sdpMid")
+                candidate.sdpMLineIndex = candidate_dict.get("sdpMLineIndex")
+
+                # candidate_parsed = parse_ice_candidate(candidate_dict.get("candidate"), candidate_dict.get("sdpMid"), candidate_dict.get("sdpMLineIndex"))
+                # print("====================> Parsed candidate : ")
+                # print(candidate_parsed)
+                # await peer.addIceCandidate(candidate_parsed)
+                await peer.addIceCandidate(candidate)
+
+            except Exception as e:
+                print("error while parsing candidate:", e)
+                print(candidate_dict)
+                return
 
         '''
         if 'sdp' in msg or 'candidate' in msg:
@@ -120,7 +298,7 @@ async def run_signaling():
     #connect to signaling server itself
     await network.start(uri)
     #connect indirectly to unity client through the server
-    await network.connect("a123")
+    await network.connect(ROOM_NAME)
     #loop and wait for messages
     while(True):
         await network.next_message()
@@ -134,6 +312,8 @@ async def main():
 
 if __name__ == "__main__":
     print("Start")
+    print("Printing the video capabilities: ")
+    print(RTCRtpReceiver.getCapabilities("video").codecs)
     loop = asyncio.get_event_loop()
     try:
         loop.run_until_complete(main())
