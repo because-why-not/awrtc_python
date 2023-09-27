@@ -3,14 +3,25 @@ import asyncio
 from websocket_network import WebsocketNetwork, NetworkEvent, NetEventType
 
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
+from aiortc.sdp import candidate_from_sdp
 import json
 
 
-
 uri = 'ws://192.168.1.3:12776'
+address = "abc123"
+
+
 network : WebsocketNetwork = None
 
 peer = RTCPeerConnection()
+@peer.on("connectionstatechange")
+def on_connectionstatechange():
+    print("connectionstatechange:", peer.connectionState)
+
+@peer.on("track")
+def on_track(track):
+    print("track:", track.kind)
+
 global dc1
 dc1 = None
 global dc2
@@ -33,6 +44,7 @@ def convert_json_to_sdp(json_messages):
         if 'candidate' in msg:
             sdp_buffer = append_candidate(sdp_buffer, msg['candidate'])
     return sdp_buffer
+
 async def create_offer():
     global dc1
     global dc2
@@ -45,6 +57,10 @@ async def create_offer():
     @dc2.on("message")
     def on_message(message):
         print("dc2", message)
+
+    peer.addTransceiver("audio", direction="sendrecv") 
+    #this is still broken
+    #peer.addTransceiver("video", direction="sendrecv")
 
     offer = await peer.createOffer()
     await peer.setLocalDescription(offer)
@@ -70,7 +86,7 @@ async def my_event_handler(evt: NetworkEvent):
         # who is suppose to send an offer. 
         # all other messages should be answer & ice candidates
         global message_buffer
-        msg = evt.data_to_text()
+        msg : str = evt.data_to_text()
         print("in msg: "+ msg)
         global setting_remote
         if 'sdp' in msg and setting_remote == False:
@@ -79,33 +95,12 @@ async def my_event_handler(evt: NetworkEvent):
             await peer.setRemoteDescription(RTCSessionDescription(json_msg["sdp"], json_msg["type"]))
         if 'candidate' in msg:
             candidate_dict = json.loads(msg)
-            candidate = RTCIceCandidate(
-                component=candidate_dict.get("sdpMLineIndex"),
-                foundation=candidate_dict.get("candidate").split()[0],
-                ip=candidate_dict.get("candidate").split()[4],
-                port=int(candidate_dict.get("candidate").split()[5]),
-                priority=int(candidate_dict.get("candidate").split()[3]),
-                protocol=candidate_dict.get("candidate").split()[2],
-                relatedAddress=candidate_dict.get("candidate").split()[7] if 'raddr' in candidate_dict.get("candidate") else None,
-                relatedPort=int(candidate_dict.get("candidate").split()[9]) if 'rport' in candidate_dict.get("candidate") else None,
-                tcpType=None,
-                type=candidate_dict.get("candidate").split()[7] if 'typ' in candidate_dict.get("candidate") else None,
-            )
+
+            candidate = candidate_from_sdp(candidate_dict.get("candidate"))
             candidate.sdpMid = candidate_dict.get("sdpMid")
             candidate.sdpMLineIndex = candidate_dict.get("sdpMLineIndex")
+            
             await peer.addIceCandidate(candidate)
-
-        '''
-        if 'sdp' in msg or 'candidate' in msg:
-            message_buffer.append(msg)
-        
-        if len(message_buffer) == 4:
-            json_messages = []
-            for msg in message_buffer:
-                json_messages.append(json.loads(msg))
-
-            sdp = convert_json_to_sdp(json_messages)
-        '''
 
 
 
@@ -120,7 +115,7 @@ async def run_signaling():
     #connect to signaling server itself
     await network.start(uri)
     #connect indirectly to unity client through the server
-    await network.connect("a123")
+    await network.connect(address)
     #loop and wait for messages
     while(True):
         await network.next_message()
