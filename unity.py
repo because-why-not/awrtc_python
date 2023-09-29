@@ -1,14 +1,18 @@
 from enum import Enum
 import asyncio
 from websocket_network import WebsocketNetwork, NetworkEvent, NetEventType
-
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
 from aiortc.sdp import candidate_from_sdp
 import json
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
+uri = os.getenv('SIGNALING_URI', 'ws://192.168.1.3:12776')
+address = os.getenv('ADDRESS', "abc123")
 
-uri = 'ws://192.168.1.3:12776'
-address = "abc123"
+print(uri)
+print(address)
 
 network : WebsocketNetwork = None
 
