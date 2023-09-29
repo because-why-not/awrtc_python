@@ -36,6 +36,13 @@ setting_remote = False
 global message_buffer
 message_buffer = []
 
+def proc_local_sdp(sdp: str):
+
+    sdp_res = sdp.replace("a=extmap:2 urn:ietf:params:rtp-hdrext:ssrc-audio-level", "a=extmap:3 urn:ietf:params:rtp-hdrext:ssrc-audio-level")
+
+    return sdp_res
+
+
 
 def append_candidate(sdp, candidate):
     sdp += 'a={}\r\n'.format(candidate)
@@ -68,7 +75,10 @@ async def create_offer():
 
     offer = await peer.createOffer()
     await peer.setLocalDescription(offer)
-    data = {"sdp":peer.localDescription.sdp, "type":"offer"}
+
+    sdp = proc_local_sdp(peer.localDescription.sdp)
+    print(sdp)
+    data = {"sdp":sdp, "type":"offer"}
     offer_w_ice =  json.dumps(data)
     print(offer_w_ice)
     return offer_w_ice
