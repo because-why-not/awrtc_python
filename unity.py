@@ -10,7 +10,6 @@ import json
 uri = 'ws://192.168.1.3:12776'
 address = "abc123"
 
-
 network : WebsocketNetwork = None
 
 peer = RTCPeerConnection()
@@ -32,6 +31,7 @@ setting_remote = False
 
 global message_buffer
 message_buffer = []
+
 
 def append_candidate(sdp, candidate):
     sdp += 'a={}\r\n'.format(candidate)
@@ -60,7 +60,7 @@ async def create_offer():
 
     peer.addTransceiver("audio", direction="sendrecv") 
     #this is still broken
-    #peer.addTransceiver("video", direction="sendrecv")
+    peer.addTransceiver("video", direction="sendrecv")
 
     offer = await peer.createOffer()
     await peer.setLocalDescription(offer)
@@ -96,7 +96,11 @@ async def my_event_handler(evt: NetworkEvent):
         if 'candidate' in msg:
             candidate_dict = json.loads(msg)
 
-            candidate = candidate_from_sdp(candidate_dict.get("candidate"))
+            str_candidate = candidate_dict.get("candidate")
+            if str_candidate == "":
+                print("Empty ice candidate")
+                return
+            candidate = candidate_from_sdp(str_candidate)
             candidate.sdpMid = candidate_dict.get("sdpMid")
             candidate.sdpMLineIndex = candidate_dict.get("sdpMLineIndex")
             
