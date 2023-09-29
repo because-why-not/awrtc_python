@@ -48,7 +48,7 @@ async def proc_video(track):
         elapsed_time = time.time() - last_fps_print
         if elapsed_time >= 1.0:  # If a second has passed
             fps = frame_counter / elapsed_time
-            print(f'FPS: {fps}')
+            print(f'FPS: {fps} {frame.width}x{frame.height} format: {frame.format}')
             frame_counter = 0
             last_fps_print = time.time()
         
