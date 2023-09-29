@@ -1,15 +1,18 @@
 from enum import Enum
+import time
 import asyncio
+import json
+import os
 from websocket_network import WebsocketNetwork, NetworkEvent, NetEventType
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
 from aiortc.sdp import candidate_from_sdp
-import json
-import os
 from dotenv import load_dotenv
 load_dotenv()
 
 uri = os.getenv('SIGNALING_URI', 'ws://192.168.1.3:12776')
 address = os.getenv('ADDRESS', "abc123")
+
+
 
 print(uri)
 print(address)
@@ -24,6 +27,34 @@ def on_connectionstatechange():
 @peer.on("track")
 def on_track(track):
     print("track:", track.kind)
+    asyncio.ensure_future(proc_video(track))
+
+async def proc_video(track):
+    last_fps_print = time.time()
+    frame_counter = 0
+
+    while True:
+        if peer.connectionState == 'new' or peer.connectionState == "connecting":
+            await asyncio.sleep(0.1)
+            continue
+
+        elif peer.connectionState != "connected":
+            print("Peer state neither connecting nor connected. Exiting proc_video")
+            break
+
+        frame = await track.recv()
+        frame_counter += 1
+
+        elapsed_time = time.time() - last_fps_print
+        if elapsed_time >= 1.0:  # If a second has passed
+            fps = frame_counter / elapsed_time
+            print(f'FPS: {fps}')
+            frame_counter = 0
+            last_fps_print = time.time()
+        
+
+
+
 
 global dc1
 dc1 = None
