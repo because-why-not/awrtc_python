@@ -5,6 +5,10 @@ import json
 import os
 from websocket_network import WebsocketNetwork, NetworkEvent, NetEventType
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
+
+from aiortc.contrib.media import MediaRecorder, MediaPlayer
+
+from tools import filter_vp8_codec
 from aiortc.sdp import candidate_from_sdp
 from dotenv import load_dotenv
 load_dotenv()
@@ -13,6 +17,14 @@ uri = os.getenv('SIGNALING_URI', 'ws://192.168.1.3:12776')
 address = os.getenv('ADDRESS', "abc123")
 
 
+
+recording = True
+sending = True
+
+
+
+inc_video_track = None
+inc_audio_track = None
 
 print(uri)
 print(address)
@@ -26,8 +38,21 @@ def on_connectionstatechange():
 
 @peer.on("track")
 def on_track(track):
+    global inc_video_track
+    global inc_audio_track
+    global recording
     print("track:", track.kind)
-    asyncio.ensure_future(proc_video(track))
+    if track.kind == "video":
+        inc_video_track = track
+        asyncio.ensure_future(proc_video(track))
+    else:
+        inc_audio_track = track
+    
+    if inc_audio_track and inc_video_track:
+        print("got both a video and audio track")
+        if recording:
+            asyncio.ensure_future(start_recording(inc_audio_track, inc_video_track))
+            
 
 async def proc_video(track):
     last_fps_print = time.time()
@@ -70,7 +95,8 @@ message_buffer = []
 def proc_local_sdp(sdp: str):
 
     sdp_res = sdp.replace("a=extmap:2 urn:ietf:params:rtp-hdrext:ssrc-audio-level", "a=extmap:3 urn:ietf:params:rtp-hdrext:ssrc-audio-level")
-
+    #this forces VP8.
+    #sdp_res = filter_vp8_codec(sdp_res)
     return sdp_res
 
 
@@ -90,6 +116,7 @@ def convert_json_to_sdp(json_messages):
 async def create_offer():
     global dc1
     global dc2
+    global sending
     dc1 = peer.createDataChannel(label="reliable")
     dc2 = peer.createDataChannel(label="unreliable")
 
@@ -100,9 +127,13 @@ async def create_offer():
     def on_message(message):
         print("dc2", message)
 
-    peer.addTransceiver("audio", direction="sendrecv") 
+    audioTransceiver = peer.addTransceiver("audio", direction="sendrecv") 
     #this is still broken
-    peer.addTransceiver("video", direction="sendrecv")
+    videoTransceiver = peer.addTransceiver("video", direction="sendrecv")
+    if sending:
+        player = MediaPlayer('video.mp4')
+        videoTransceiver.sender.replaceTrack(player.video)
+        audioTransceiver.sender.replaceTrack(player.audio)
 
     offer = await peer.createOffer()
     await peer.setLocalDescription(offer)
@@ -168,10 +199,36 @@ async def run_signaling():
     #loop and wait for messages
     while(True):
         await network.next_message()
+    
+
+recorder = None
+
+async def start_recording(audio_track, video_track):
+    global recorder
+    # Create a MediaRecorder instance
+    recorder = MediaRecorder("rec.mp4")
+
+    # Add the audio and video tracks to the recorder
+    recorder.addTrack(audio_track)
+    recorder.addTrack(video_track)
+
+    # Start recording
+    await recorder.start()
+    print("recording started ....")
+
+
+async def stop_recording():
+    global recorder
+    if recorder:
+        # Start recording
+        await recorder.stop()
+        print("recording stop ...")
+
 
 async def main():
     
     task1 = asyncio.ensure_future(run_signaling())
+
     #place holder for other task
     task2 = asyncio.ensure_future(dummy_task())
     await asyncio.gather(task1, task2)
@@ -183,7 +240,12 @@ if __name__ == "__main__":
         loop.run_until_complete(main())
     except KeyboardInterrupt:
         pass
-    finally:
+    finally:        
+        print("Shutting down...")
+        loop.run_until_complete(stop_recording())
+        print("stop loop ...")
         loop.close()
     
-    
+
+
+
