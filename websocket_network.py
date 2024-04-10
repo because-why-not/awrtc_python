@@ -5,6 +5,9 @@ import struct
 import websockets
 
 
+#TODO: remove default value and force the proper use of ids for send calls
+#check if using await next_message() makes sense in the long run
+#how does this behave if the connection ends?
 
 class NetEventType(Enum):
     Invalid = 0
@@ -166,6 +169,11 @@ class WebsocketNetwork:
         evt = NetworkEvent(NetEventType.NewConnection, ConnectionId(1), address)
         await self.send_network_event(evt)
 
+    async def listen(self, address: str):
+
+        evt = NetworkEvent(NetEventType.ServerInitialized, ConnectionId(-1), address)
+        await self.send_network_event(evt)
+
     async def next_message(self) :
         response = await self.mSocket.recv()
         self.parse_message(response)
@@ -182,13 +190,13 @@ class WebsocketNetwork:
         msg = NetworkEvent.to_byte_array(evt)
         await self._internal_send(msg)
     
-    async def send_text(self, text):
+    async def send_text(self, text, connection_id: ConnectionId = ConnectionId(1)):
         text_data = text.encode('utf-16-le')
         # without utf-16-le we are getting a EF BB BF as prefix here.
         # This appears to be an UTF-8 prefix to mark byte order
         # https://en.wikipedia.org/wiki/Byte_order_mark
         
-        evt = NetworkEvent(NetEventType.ReliableMessageReceived, ConnectionId(1), text_data)
+        evt = NetworkEvent(NetEventType.ReliableMessageReceived, connection_id, text_data)
         await self.send_network_event(evt)
     
 
