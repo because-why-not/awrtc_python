@@ -39,8 +39,7 @@ async def run_signaling():
     #connect indirectly to unity client through the server
     await network.connect("a123")
     #loop and wait for messages
-    while(True):
-        await network.next_message()
+    await network.process_messages()
 
 async def main():
     

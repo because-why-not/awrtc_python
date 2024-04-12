@@ -37,11 +37,9 @@ class TestWebsocketNetwork:
             
             await self.network.send_text(msg, evt.connection_id)
         if evt.type == NetEventType.ConnectionFailed:
-            print(f"{self.name}: error")
-            self.running = False
+            await self.error("ConnectionFailed")
         if evt.type == NetEventType.Disconnected:
-            print(f"{self.name}: error")
-            self.running = False
+            await self.error("Disconnected before completion")
 
         if evt.type == NetEventType.ReliableMessageReceived:
             # we received a message from the other end. The other side will send a random number in case we need to negotiate
@@ -50,7 +48,18 @@ class TestWebsocketNetwork:
             global message_buffer
             msg : str = evt.data_to_text()
             print(f"{self.name}: message received: {msg}")
-            self.running = False
+            await self.success()
+
+    async def error(self, msg):
+        print(f"{self.name}: error {msg}")
+        self.running = False
+        await self.network.shutdown()
+
+    async def success(self):
+        print(f"{self.name}: test finished successfully")
+        self.running = False
+        await self.network.shutdown()
+        
             
     async def run_listening(self, uri, address):
         await self.network.start(uri)
@@ -58,8 +67,7 @@ class TestWebsocketNetwork:
         print(f"{self.name}: listening")
         await self.network.listen(address)
         #loop and wait for messages
-        while(self.running):
-            await self.network.next_message()
+        await self.network.process_messages()
         print("{self.name}: stopped running")
 
     async def run_connecting(self, uri, address):
@@ -69,8 +77,7 @@ class TestWebsocketNetwork:
         print(f"{self.name}: connecting")
         await self.network.connect(address)
         #loop and wait for messages
-        while(self.running):
-            await self.network.next_message()
+        await self.network.process_messages()
         print("{self.name}: stopped running")
 
 async def main():

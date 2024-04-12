@@ -196,9 +196,8 @@ async def run_signaling():
     await network.start(uri)
     #connect indirectly to unity client through the server
     await network.connect(address)
-    #loop and wait for messages
-    while(True):
-        await network.next_message()
+    await network.process_messages()
+    
     
 
 recorder = None

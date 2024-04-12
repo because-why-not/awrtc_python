@@ -3,6 +3,9 @@ import asyncio
 import json
 import struct
 import websockets
+from websockets.sync.client import ClientConnection
+
+from websockets.exceptions import ConnectionClosed
 
 
 #TODO: remove default value and force the proper use of ids for send calls
@@ -149,7 +152,7 @@ class WebsocketNetwork:
     PROTOCOL_VERSION = 2
 
     def __init__(self):
-        self.mSocket = None 
+        self.mSocket : ClientConnection= None 
         self.mRemoteProtocolVersion = None
         self.mHeartbeatReceived = False
         self.event_handlers = []  
@@ -174,11 +177,22 @@ class WebsocketNetwork:
         evt = NetworkEvent(NetEventType.ServerInitialized, ConnectionId(-1), address)
         await self.send_network_event(evt)
 
-    async def next_message(self) :
+    async def next_message(self):        
         response = await self.mSocket.recv()
         self.parse_message(response)
+    
+    async def process_messages(self):
+        try:
+            while True:
+                await self.next_message()
+        except ConnectionClosed:
+            print("Connection closed")
+            
         
-
+    async def shutdown(self):
+        #TODO: we should return Disconnected events for all known connections first
+        #and connection failed for pending connections
+        await self.mSocket.close()
 
     async def send_version(self):
         msg = bytearray(2)

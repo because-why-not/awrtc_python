@@ -23,11 +23,18 @@ class CallPeer:
         self.inc_video_track = None
         self.inc_audio_track = None
 
+        self._observers = []
         # Setup peer connection event handlers
         self.peer.on("track", self.on_track)
         self.peer.on("connectionstatechange", self.on_connectionstatechange)
 
+    def on_signaling_message(self, observer_function):
+        self._observers.append(observer_function)
 
+    async def trigger_on_signaling_message(self, message):
+        for observer in self._observers:
+            await observer(message)
+    
     async def forward_message(self, msg: string):
         print("in msg: "+ msg)
         jobj = json.loads(msg)
@@ -35,6 +42,9 @@ class CallPeer:
             if 'sdp' in jobj:
                 await self.peer.setRemoteDescription(RTCSessionDescription(jobj["sdp"], jobj["type"]))
                 print("setRemoteDescription done")
+                if self.peer.signalingState == "have-remote-offer":
+                    await self.create_answer()
+
             if 'candidate' in jobj:
                 str_candidate = jobj.get("candidate")
                 if str_candidate == "":
@@ -76,12 +86,22 @@ class CallPeer:
         offer = await self.peer.createOffer()
         print("Offer created")
         await self.peer.setLocalDescription(offer)
-        sdp = proc_local_sdp(self.peer.localDescription.sdp)
-        
-        data = {"sdp":sdp, "type":"offer"}
-        offer_w_ice =  json.dumps(data)
+        offer_w_ice = self.sdpToText(self.peer.localDescription.sdp, "offer")
         print(offer_w_ice)
         return offer_w_ice
+
+    def sdpToText(self, sdp, sdp_type):
+        proc_sdp = proc_local_sdp(sdp)
+        data = {"sdp":proc_sdp, "type": sdp_type}
+        text =  json.dumps(data)
+        return text
+
+
+    async def create_answer(self):
+        answer = await self.peer.createAnswer()
+        await self.peer.setLocalDescription(answer)
+        text_answer = self.sdpToText(self.peer.localDescription.sdp, "answer")
+        await self.trigger_on_signaling_message(text_answer)
 
     async def set_remote_description(self, sdp, type_):
         description = RTCSessionDescription(sdp, type_)
