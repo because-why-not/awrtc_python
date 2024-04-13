@@ -1,7 +1,8 @@
 import asyncio
 import json
 import string
-from aiortc import RTCPeerConnection, RTCSessionDescription, RTCDataChannel
+from typing import List
+from aiortc import RTCPeerConnection, RTCSessionDescription, RTCDataChannel, RTCRtpTransceiver, MediaStreamTrack 
 from aiortc.contrib.media import MediaPlayer, MediaRecorder
 from aiortc.sdp import candidate_from_sdp
 
@@ -14,14 +15,18 @@ class CallPeer:
         self.sending = sending
         self.recorder = None
         self.player = None
+        self.out_video_track : MediaStreamTrack = None
+        self.out_audio_track : MediaStreamTrack = None
         if sending:
             self.player = MediaPlayer(sending)
+            self.out_video_track = self.player.video
+            self.out_audio_track = self.player.audio
 
         self.dc_reliable : RTCDataChannel = None
         self.dc_unreliable : RTCDataChannel = None
 
-        self.inc_video_track = None
-        self.inc_audio_track = None
+        self.inc_video_track : MediaStreamTrack = None
+        self.inc_audio_track : MediaStreamTrack = None
 
         self._observers = []
         # Setup peer connection event handlers
@@ -70,6 +75,16 @@ class CallPeer:
     def on_connectionstatechange(self):
         print("Connection state changed:", self.peer.connectionState)
 
+    
+    def setup_transceivers(self):
+        if self.sending:
+            if self.videoTransceiver is not None and self.out_video_track is not None:
+                self.videoTransceiver.sender.replaceTrack(self.out_video_track)
+                self.videoTransceiver.direction = "sendrecv"
+            if self.audioTransceiver is not None and self.out_audio_track is not None:
+                self.audioTransceiver.sender.replaceTrack(self.out_audio_track)
+                self.audioTransceiver.direction = "sendrecv"
+
     async def create_offer(self):
 
         self.dc_reliable = self.peer.createDataChannel(label="reliable")
@@ -77,11 +92,7 @@ class CallPeer:
 
         self.audioTransceiver = self.peer.addTransceiver("audio", direction="sendrecv") 
         self.videoTransceiver = self.peer.addTransceiver("video", direction="sendrecv")
-
-        if self.sending:
-            player = MediaPlayer('video.mp4')
-            self.videoTransceiver.sender.replaceTrack(player.video)
-            self.audioTransceiver.sender.replaceTrack(player.audio)
+        self.setup_transceivers()
 
         offer = await self.peer.createOffer()
         print("Offer created")
@@ -96,8 +107,31 @@ class CallPeer:
         text =  json.dumps(data)
         return text
 
-
+    @staticmethod
+    def find_first(media_list : List[RTCRtpTransceiver], kind: str):
+        for media in media_list:
+            if media.kind == kind:
+                return media
+        return None 
+    
     async def create_answer(self):
+        #TODO: we must attach our tracks to the transceiver!!!
+        #!!!!
+        transceivers = self.peer.getTransceivers()
+        if len(transceivers) != 2: 
+            #this will likely crash later
+            print("Offer side might be incompatible. Expected 2 transceivers but found " + len(transceivers))
+
+        self.videoTransceiver = CallPeer.find_first(transceivers, "video")
+        if self.videoTransceiver is None: 
+            print("No video transceiver found. The remote side is likely incompatible")
+
+        self.audioTransceiver = CallPeer.find_first(transceivers, "audio")
+        if self.audioTransceiver is None: 
+            print("No audio transceiver found. The remote side is likely incompatible")
+        
+        self.setup_transceivers()
+            
         answer = await self.peer.createAnswer()
         await self.peer.setLocalDescription(answer)
         text_answer = self.sdpToText(self.peer.localDescription.sdp, "answer")
