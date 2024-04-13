@@ -7,6 +7,8 @@ from aiortc.contrib.media import MediaPlayer, MediaRecorder
 from aiortc.sdp import candidate_from_sdp
 
 from unity import proc_local_sdp
+DATA_CHANNEL_RELIABLE= "reliable"
+DATA_CHANNEL_UNRELIABLE= "unreliable"
 
 class CallPeer:
     def __init__(self, sending: string = None, recording: string = None):
@@ -32,6 +34,15 @@ class CallPeer:
         # Setup peer connection event handlers
         self.peer.on("track", self.on_track)
         self.peer.on("connectionstatechange", self.on_connectionstatechange)
+        self.peer.on("datachannel", self.on_data_channel)
+
+    def on_data_channel(self, datachannel):
+        print("received new data channel " + datachannel.label)
+        if datachannel.label == DATA_CHANNEL_RELIABLE:
+            self.dc_reliable = datachannel
+        elif datachannel.label == DATA_CHANNEL_UNRELIABLE:
+            self.dc_unreliable = datachannel
+
 
     def on_signaling_message(self, observer_function):
         self._observers.append(observer_function)
@@ -87,8 +98,8 @@ class CallPeer:
 
     async def create_offer(self):
 
-        self.dc_reliable = self.peer.createDataChannel(label="reliable")
-        self.dc_unreliable = self.peer.createDataChannel(label="unreliable")
+        self.dc_reliable = self.peer.createDataChannel(label=DATA_CHANNEL_RELIABLE)
+        self.dc_unreliable = self.peer.createDataChannel(label=DATA_CHANNEL_UNRELIABLE)
 
         self.audioTransceiver = self.peer.addTransceiver("audio", direction="sendrecv") 
         self.videoTransceiver = self.peer.addTransceiver("video", direction="sendrecv")
