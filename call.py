@@ -1,7 +1,7 @@
 from websocket_network import WebsocketNetwork, NetworkEvent, NetEventType
 from aiortc import MediaStreamTrack
 
-from call_peer import CallPeer
+from call_peer import CallPeer, TracksObserver
 
 '''
 Prototype Call implementation similar to Unity ICall and BrowserCall for web. 
@@ -11,14 +11,14 @@ Prototype Call implementation similar to Unity ICall and BrowserCall for web.
 * The remote side must already wait for an incoming call
 '''
 class Call:
-    def __init__(self, uri):
+    def __init__(self, uri, track_observer: TracksObserver):
         self.network : WebsocketNetwork = None
         self.uri = uri
         self.in_signaling = False
         self.listening = False
 
-        self.peer = CallPeer("incoming.mp4")
-
+        self.peer = CallPeer()
+        self.peer.track_observer = track_observer
         
         self.peer.on_signaling_message(self.on_peer_signaling_message)
         self.connection_id = None

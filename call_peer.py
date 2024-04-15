@@ -1,6 +1,8 @@
 import asyncio
 import json
 import string
+from abc import ABC, abstractmethod
+
 from typing import List
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCDataChannel, RTCRtpTransceiver, MediaStreamTrack 
 from aiortc.contrib.media import MediaPlayer, MediaRecorder
@@ -10,12 +12,27 @@ from unity import proc_local_sdp
 DATA_CHANNEL_RELIABLE= "reliable"
 DATA_CHANNEL_UNRELIABLE= "unreliable"
 
-class CallPeer:
-    def __init__(self, recording: string = None):
-        self.peer = RTCPeerConnection()
-        self.recording = recording
-        self.recorder = None
+class TracksObserver(ABC):
+    @abstractmethod
+    async def on_start(self):
+        '''Called when a peer connects and playback is expected to start'''
+        pass
+    @abstractmethod
+    async def on_stop(self):
+        '''Called on close'''
+        pass
+
+    @abstractmethod
+    def on_track(self, track: MediaStreamTrack):
+        '''Called several times for each track'''
+        pass
+
         
+class CallPeer:
+    def __init__(self):
+        self.peer = RTCPeerConnection()
+        
+        self.track_observer : TracksObserver = None
         self.out_video_track : MediaStreamTrack = None
         self.out_audio_track : MediaStreamTrack = None
 
@@ -80,12 +97,17 @@ class CallPeer:
             self.inc_audio_track = track
         elif track.kind == "video":
             self.inc_video_track = track
+        self.track_observer.on_track(track)
 
-        if self.recording:
-            await self.start_recording(self.recording, self.inc_audio_track, self.inc_video_track)
-
-    def on_connectionstatechange(self):
+    async def on_connectionstatechange(self):
         print("Connection state changed:", self.peer.connectionState)
+        if self.peer.connectionState == "connected":
+            await self.track_observer.on_start()
+        elif self.peer.connectionState == "failed":
+            #todo: handle this in call
+            pass
+        elif self.peer.connectionState == "closed":
+            await self.track_observer.on_stop()
 
     
     def setup_transceivers(self):
@@ -155,23 +177,6 @@ class CallPeer:
 
     async def add_ice_candidate(self, candidate):
         await self.peer.addIceCandidate(candidate)
-
-    async def start_recording(self, filename, atrack, vtrack):
-        print("Recording setup")
-        self.recorder = MediaRecorder(filename)
-        if atrack:
-            self.recorder.addTrack(atrack)
-        if vtrack:
-            self.recorder.addTrack(vtrack)
-
-        await self.recorder.start()
-        print("Recording started")
-
-    async def stop_recording(self):
-        if self.recorder:
-            await self.recorder.stop()
-            print("Recording stopped")
     
     async def dispose(self):
-        await self.stop_recording()
         await self.peer.close()
