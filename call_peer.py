@@ -11,18 +11,13 @@ DATA_CHANNEL_RELIABLE= "reliable"
 DATA_CHANNEL_UNRELIABLE= "unreliable"
 
 class CallPeer:
-    def __init__(self, sending: string = None, recording: string = None):
+    def __init__(self, recording: string = None):
         self.peer = RTCPeerConnection()
         self.recording = recording
-        self.sending = sending
         self.recorder = None
-        self.player = None
+        
         self.out_video_track : MediaStreamTrack = None
         self.out_audio_track : MediaStreamTrack = None
-        if sending:
-            self.player = MediaPlayer(sending)
-            self.out_video_track = self.player.video
-            self.out_audio_track = self.player.audio
 
         self.dc_reliable : RTCDataChannel = None
         self.dc_unreliable : RTCDataChannel = None
@@ -35,6 +30,12 @@ class CallPeer:
         self.peer.on("track", self.on_track)
         self.peer.on("connectionstatechange", self.on_connectionstatechange)
         self.peer.on("datachannel", self.on_data_channel)
+
+    def attach_track(self, track: MediaStreamTrack):
+        if track.kind == "video":
+            self.out_video_track = track
+        else:
+            self.out_audio_track = track
 
     def on_data_channel(self, datachannel):
         print("received new data channel " + datachannel.label)
@@ -88,13 +89,12 @@ class CallPeer:
 
     
     def setup_transceivers(self):
-        if self.sending:
-            if self.videoTransceiver is not None and self.out_video_track is not None:
-                self.videoTransceiver.sender.replaceTrack(self.out_video_track)
-                self.videoTransceiver.direction = "sendrecv"
-            if self.audioTransceiver is not None and self.out_audio_track is not None:
-                self.audioTransceiver.sender.replaceTrack(self.out_audio_track)
-                self.audioTransceiver.direction = "sendrecv"
+        if self.videoTransceiver is not None and self.out_video_track is not None:
+            self.videoTransceiver.sender.replaceTrack(self.out_video_track)
+            self.videoTransceiver.direction = "sendrecv"
+        if self.audioTransceiver is not None and self.out_audio_track is not None:
+            self.audioTransceiver.sender.replaceTrack(self.out_audio_track)
+            self.audioTransceiver.direction = "sendrecv"
 
     async def create_offer(self):
 

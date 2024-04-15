@@ -1,18 +1,7 @@
-from enum import Enum
-import time
-import asyncio
-import json
-import os
 from websocket_network import WebsocketNetwork, NetworkEvent, NetEventType
-from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
+from aiortc import MediaStreamTrack
 
-from aiortc.contrib.media import MediaRecorder, MediaPlayer
-
-from tools import filter_vp8_codec
-from aiortc.sdp import candidate_from_sdp
-from dotenv import load_dotenv
 from call_peer import CallPeer
-load_dotenv()
 
 '''
 Prototype Call implementation similar to Unity ICall and BrowserCall for web. 
@@ -27,11 +16,20 @@ class Call:
         self.uri = uri
         self.in_signaling = False
         self.listening = False
-        self.peer = CallPeer("video.mp4", "incoming.mp4")
+
+        self.peer = CallPeer("incoming.mp4")
+
+        
         self.peer.on_signaling_message(self.on_peer_signaling_message)
         self.connection_id = None
         #todo: event handler to deal with offer,answer and ice candidates
         #self.peer.register_event_handler(self.peer_signaling_event_handler)
+    def attach_track(self, track: MediaStreamTrack):
+        if track.kind == "video":
+            self.out_video_track = track
+        else:
+            self.out_audio_track = track
+        self.peer.attach_track(track)
     async def on_peer_signaling_message(self, msg: str):
         print("sending " + msg)
         await self.network.send_text(msg, self.connection_id)
@@ -104,24 +102,3 @@ class Call:
         if self.peer:
             await self.peer.dispose()
 
-
-def main():
-    uri = os.getenv('SIGNALING_URI', 'ws://192.168.1.3:12776')
-    address = os.getenv('ADDRESS', "abc123")
-
-    call  = Call(uri)
-    loop = asyncio.get_event_loop()
-    
-    try:
-        loop.run_until_complete(call.listen(address))
-    except KeyboardInterrupt:
-        pass
-    finally:        
-        print("Shutting down...")
-        loop.run_until_complete(call.dispose())
-        print("shutdown complete.")
-
-if __name__ == "__main__":
-    print("Start")
-    main()
-    
