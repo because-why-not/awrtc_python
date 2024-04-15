@@ -11,7 +11,7 @@ Prototype Call implementation similar to Unity ICall and BrowserCall for web.
 * The remote side must already wait for an incoming call
 '''
 class Call:
-    def __init__(self, uri, track_observer: TracksObserver):
+    def __init__(self, uri, track_observer: TracksObserver = None):
         self.network : WebsocketNetwork = None
         self.uri = uri
         self.in_signaling = False

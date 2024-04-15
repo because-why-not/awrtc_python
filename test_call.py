@@ -34,7 +34,7 @@ def main():
 
     call  = Call(uri, MyTracksHandler("inc.mp4"))
     sending = "video.mp4"
-    player = MediaPlayer(sending)
+    player = MediaPlayer(sending, loop=True)
     call.attach_track(player.video)
     call.attach_track(player.audio)
 

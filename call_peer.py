@@ -97,17 +97,20 @@ class CallPeer:
             self.inc_audio_track = track
         elif track.kind == "video":
             self.inc_video_track = track
-        self.track_observer.on_track(track)
+        if self.track_observer:
+            self.track_observer.on_track(track)
 
     async def on_connectionstatechange(self):
         print("Connection state changed:", self.peer.connectionState)
         if self.peer.connectionState == "connected":
-            await self.track_observer.on_start()
+            if self.track_observer:
+                await self.track_observer.on_start()
         elif self.peer.connectionState == "failed":
             #todo: handle this in call
             pass
         elif self.peer.connectionState == "closed":
-            await self.track_observer.on_stop()
+            if self.track_observer:
+                await self.track_observer.on_stop()
 
     
     def setup_transceivers(self):
