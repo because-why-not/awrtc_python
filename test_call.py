@@ -5,9 +5,12 @@ from dotenv import load_dotenv
 
 from call import Call
 from call_peer import TracksObserver
+from test_tracks import BeepTrack, TestVideoStreamTrack
 
 load_dotenv()
 
+import logging
+logging.basicConfig(level=logging.INFO)
 
 # Implementing the interface
 class MyTracksHandler(TracksObserver):
@@ -33,10 +36,18 @@ def main():
     address = os.getenv('ADDRESS', "abc123")
 
     call  = Call(uri, MyTracksHandler("inc.mp4"))
-    sending = "video.mp4"
-    player = MediaPlayer(sending, loop=True)
-    call.attach_track(player.video)
-    call.attach_track(player.audio)
+
+    video_file = False
+    if video_file:
+        sending = "video.mp4"
+        player = MediaPlayer(sending, loop=True)
+        call.attach_track(player.video)
+        call.attach_track(player.audio)
+    else:
+        call.attach_track(TestVideoStreamTrack())
+        call.attach_track(BeepTrack())
+        
+        
 
 
 
