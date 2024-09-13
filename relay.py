@@ -4,8 +4,7 @@ from aiortc.contrib.media import MediaPlayer, MediaRecorder
 from dotenv import load_dotenv
 
 from call import Call
-from call_peer import TracksObserver
-from test_call import MyTracksHandler
+from call_peer import CallEventHandler
 
 load_dotenv()
 
@@ -14,7 +13,7 @@ uri = os.getenv('SIGNALING_URI', 'ws://192.168.1.3:12776')
 
 
 # Implementing the interface
-class RelayTracks(TracksObserver):
+class RelayTracks(CallEventHandler):
 
     
 

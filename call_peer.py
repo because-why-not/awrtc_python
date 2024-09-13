@@ -1,46 +1,61 @@
 import asyncio
 import json
+import random
 import string
 from abc import ABC, abstractmethod
 
-from typing import List
+from typing import List, Optional
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCDataChannel, RTCRtpTransceiver, MediaStreamTrack 
 from aiortc.contrib.media import MediaPlayer, MediaRecorder
 from aiortc.sdp import candidate_from_sdp
 
+from call_events import CallAcceptedEventArgs, CallEndedEventArgs, CallEventArgs, CallEventType, TrackUpdateEventArgs
 from unity import proc_local_sdp
+from websocket_network import ConnectionId
+
 DATA_CHANNEL_RELIABLE= "reliable"
 DATA_CHANNEL_UNRELIABLE= "unreliable"
 
-class TracksObserver(ABC):
+class CallEventHandler(ABC):
+    @abstractmethod
+    async def on_call_event(self, args: CallEventArgs):
+        pass
+
+class OldCallEventHandler(CallEventHandler):
+    
     @abstractmethod
     async def on_start(self):
-        '''Called when a peer connects and playback is expected to start'''
         pass
     @abstractmethod
     async def on_stop(self):
-        '''Called on close'''
         pass
 
     @abstractmethod
-    def on_track(self, track: MediaStreamTrack):
-        '''Called several times for each track'''
+    def on_track(self, track):
         pass
-
+    
+    async def on_call_event(self, args: CallEventArgs):
+        if args.type == CallEventType.CALL_ACCEPTED:
+            await self.on_start()
+        elif args.type == CallEventType.CALL_ENDED:
+            await self.on_stop()
+        elif isinstance(args, TrackUpdateEventArgs):
+            self.on_track(args.track)
         
+
 class CallPeer:
-    def __init__(self):
+    def __init__(self, connection_id : ConnectionId, track_observer: CallEventHandler):
         self.peer = RTCPeerConnection()
-        
-        self.track_observer : TracksObserver = None
-        self.out_video_track : MediaStreamTrack = None
-        self.out_audio_track : MediaStreamTrack = None
+        self.connection_id = connection_id
+        self.random_number : int
+        self.track_observer : CallEventHandler = track_observer
+        self.dc_reliable : RTCDataChannel
+        self.dc_unreliable : RTCDataChannel
 
-        self.dc_reliable : RTCDataChannel = None
-        self.dc_unreliable : RTCDataChannel = None
-
-        self.inc_video_track : MediaStreamTrack = None
-        self.inc_audio_track : MediaStreamTrack = None
+        self.out_video_track : Optional[MediaStreamTrack] = None
+        self.out_audio_track : Optional[MediaStreamTrack] = None
+        self.inc_video_track : Optional[MediaStreamTrack] = None
+        self.inc_audio_track : Optional[MediaStreamTrack] = None
 
         self._observers = []
         # Setup peer connection event handlers
@@ -67,29 +82,55 @@ class CallPeer:
 
     async def trigger_on_signaling_message(self, message):
         for observer in self._observers:
-            await observer(message)
+            await observer(self, message)
     
-    async def forward_message(self, msg: string):
+    async def forward_message(self, msg: str):
         print("in msg: "+ msg)
-        jobj = json.loads(msg)
-        if isinstance(jobj, dict):
-            if 'sdp' in jobj:
-                await self.peer.setRemoteDescription(RTCSessionDescription(jobj["sdp"], jobj["type"]))
-                print("setRemoteDescription done")
-                if self.peer.signalingState == "have-remote-offer":
-                    await self.create_answer()
+        try:
+            jobj = json.loads(msg)
+            if isinstance(jobj, dict):
+                if 'sdp' in jobj:
+                    await self.peer.setRemoteDescription(RTCSessionDescription(jobj["sdp"], jobj["type"]))
+                    print("setRemoteDescription done")
+                    if self.peer.signalingState == "have-remote-offer":
+                        await self.create_answer()
 
-            if 'candidate' in jobj:
-                str_candidate = jobj.get("candidate")
-                if str_candidate == "":
-                    print("Empty ice candidate")
-                    return
-                candidate = candidate_from_sdp(str_candidate)
-                candidate.sdpMid = jobj.get("sdpMid")
-                candidate.sdpMLineIndex = jobj.get("sdpMLineIndex")
-                
-                await self.peer.addIceCandidate(candidate)
-                print("addIceCandidate done")
+                elif 'candidate' in jobj:
+                    str_candidate = jobj.get("candidate")
+                    if str_candidate is not None:
+                        if str_candidate == "":
+                            print("Empty ice candidate")
+                            return
+                        candidate = candidate_from_sdp(str_candidate)
+                        candidate.sdpMid = jobj.get("sdpMid")
+                        candidate.sdpMLineIndex = jobj.get("sdpMLineIndex")
+                        await self.peer.addIceCandidate(candidate)
+                        print("addIceCandidate done")
+                    else:
+                        print("invalid candidate message" + msg)
+                else:
+                    print("error: unexpected json object received " + msg)
+            elif isinstance(jobj, int):
+                    #if needed we compare our random numbers and decide who sends out the offer
+                    #if not needed we already have created an offer and signalingState is "have-local-offer""
+                    print("random number received " + str(jobj))
+                    if self.peer.signalingState is "stable" and int(self.random_number) > jobj:
+                        await self.create_offer()
+
+        except json.JSONDecodeError:
+            # If it's not valid JSON, check if it's an integer
+            if msg.isdigit():
+                integer_value = int(msg)
+                print(f"Received an integer: {integer_value}")
+                # Handle the integer case here
+                # For example:
+                # await self.handle_integer_message(integer_value)
+            else:
+                print(f"Received message is neither valid JSON nor an integer: {msg}")
+                # Handle the error case here, maybe raise an exception or log an error
+        #check if it is just a single integer
+        
+        print("done")
 
     async def on_track(self, track):
         print("Track received:", track.kind)
@@ -97,20 +138,22 @@ class CallPeer:
             self.inc_audio_track = track
         elif track.kind == "video":
             self.inc_video_track = track
+        
+        await self.trigger_event(TrackUpdateEventArgs(self.connection_id, track))
+            
+
+    async def trigger_event(self, args: CallEventArgs):
         if self.track_observer:
-            self.track_observer.on_track(track)
+            await self.track_observer.on_call_event(args)
 
     async def on_connectionstatechange(self):
         print("Connection state changed:", self.peer.connectionState)
         if self.peer.connectionState == "connected":
-            if self.track_observer:
-                await self.track_observer.on_start()
+            await self.trigger_event(CallAcceptedEventArgs(self.connection_id))
         elif self.peer.connectionState == "failed":
-            #todo: handle this in call
-            pass
+            await self.trigger_event(CallEndedEventArgs(self.connection_id))
         elif self.peer.connectionState == "closed":
-            if self.track_observer:
-                await self.track_observer.on_stop()
+            await self.trigger_event(CallEndedEventArgs(self.connection_id))
 
     
     def setup_transceivers(self):
@@ -121,6 +164,13 @@ class CallPeer:
             self.audioTransceiver.sender.replaceTrack(self.out_audio_track)
             self.audioTransceiver.direction = "sendrecv"
 
+    async def negotiate_role(self):
+        #send random number in case offer/answer role is unclear
+        self.random_number = random.randint(1, 2**31 - 1)
+        neg = str(self.random_number)
+        print("sending : " + neg)
+        await self.trigger_on_signaling_message(neg)
+        
     async def create_offer(self):
 
         self.dc_reliable = self.peer.createDataChannel(label=DATA_CHANNEL_RELIABLE)
@@ -135,7 +185,9 @@ class CallPeer:
         await self.peer.setLocalDescription(offer)
         offer_w_ice = self.sdpToText(self.peer.localDescription.sdp, "offer")
         print(offer_w_ice)
-        return offer_w_ice
+        
+        await self.trigger_on_signaling_message(offer_w_ice)
+        #return offer_w_ice
 
     def sdpToText(self, sdp, sdp_type):
         proc_sdp = proc_local_sdp(sdp)
@@ -156,7 +208,7 @@ class CallPeer:
         transceivers = self.peer.getTransceivers()
         if len(transceivers) != 2: 
             #this will likely crash later
-            print("Offer side might be incompatible. Expected 2 transceivers but found " + len(transceivers))
+            print("Offer side might be incompatible. Expected 2 transceivers but found " + str(len(transceivers)))
 
         self.videoTransceiver = CallPeer.find_first(transceivers, "video")
         if self.videoTransceiver is None: 
@@ -168,7 +220,10 @@ class CallPeer:
         
         self.setup_transceivers()
             
-        answer = await self.peer.createAnswer()
+        answer : Optional[RTCSessionDescription] = await self.peer.createAnswer()
+        if answer is None:
+            print("Error creating answer returned none")
+            return
         await self.peer.setLocalDescription(answer)
         text_answer = self.sdpToText(self.peer.localDescription.sdp, "answer")
         await self.trigger_on_signaling_message(text_answer)

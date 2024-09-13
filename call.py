@@ -1,7 +1,12 @@
-from websocket_network import WebsocketNetwork, NetworkEvent, NetEventType
+import random
+from typing import Dict, Optional
+from websocket_network import ConnectionId, WebsocketNetwork, NetworkEvent, NetEventType
 from aiortc import MediaStreamTrack
 
-from call_peer import CallPeer, TracksObserver
+from call_peer import CallPeer, CallEventHandler
+
+
+
 
 '''
 Prototype Call implementation similar to Unity ICall and BrowserCall for web. 
@@ -11,28 +16,45 @@ Prototype Call implementation similar to Unity ICall and BrowserCall for web.
 * The remote side must already wait for an incoming call
 '''
 class Call:
-    def __init__(self, uri, track_observer: TracksObserver = None):
-        self.network : WebsocketNetwork = None
+    def __init__(self, uri, track_observer: CallEventHandler, isConference = False):
+        self.mIsConference = isConference
+        self.network : WebsocketNetwork
         self.uri = uri
         self.in_signaling = False
         self.listening = False
-
-        self.peer = CallPeer()
-        self.peer.track_observer = track_observer
+        self.track_observer = track_observer
+        self.peers : Dict[int, CallPeer] = {}
+    
+    def createPeer(self, connectionId: ConnectionId):
         
-        self.peer.on_signaling_message(self.on_peer_signaling_message)
-        self.connection_id = None
-        #todo: event handler to deal with offer,answer and ice candidates
-        #self.peer.register_event_handler(self.peer_signaling_event_handler)
+        print("creating peer with id " + str(connectionId))
+        peer = CallPeer(connectionId, self.track_observer)
+        
+        peer.on_signaling_message(self.on_peer_signaling_message)
+        
+        if self.out_video_track:
+            peer.attach_track(self.out_video_track)
+        if self.out_audio_track:
+            peer.attach_track(self.out_audio_track)
+        self.peers[connectionId.id] = peer
+        return peer
+    
+    def getPeer(self, connectionId: ConnectionId):
+        if connectionId.id in self.peers:
+            return self.peers[connectionId.id]
+        print("error: peer with id " + str(connectionId) + " not found")
+        return None
+
     def attach_track(self, track: MediaStreamTrack):
         if track.kind == "video":
             self.out_video_track = track
         else:
             self.out_audio_track = track
-        self.peer.attach_track(track)
-    async def on_peer_signaling_message(self, msg: str):
+        
+
+    async def on_peer_signaling_message(self, peer, msg: str):
         print("sending " + msg)
-        await self.network.send_text(msg, self.connection_id)
+        await self.network.send_text(msg, peer.connection_id)
 
     async def listen(self, address):
         self.network = WebsocketNetwork()
@@ -73,32 +95,37 @@ class Call:
         print(f"Received event of type {evt.type}")
         if evt.type == NetEventType.NewConnection:
             print("NewConnection event")
-            self.connection_id = evt.connection_id
+            peer = self.createPeer(evt.connection_id)
+            
             #TODO: we need an event handler to 
-            #manage all other signaling messages anway. 
+            #manage all other signaling messages anyway. 
             #no need to give the offer special treatmeant via
             #its own call
-            if self.listening == False:
-                offer = await self.peer.create_offer()
-                print("sending : " + offer)
-                await self.network.send_text(offer)
-
+            
+            if self.mIsConference:
+                await peer.negotiate_role()
+            elif self.listening == False:
+                #by default new outgoing connections create an offer
+                await peer.create_offer()
+                
         elif evt.type == NetEventType.ConnectionFailed:
-            print("ConnectionFailed event")
-            self.shutdown("ConnectionFailed event from signaling")
+            peer = self.getPeer(evt.connection_id)
+            print("ConnectionFailed event " + str(evt.connection_id))
+            
         elif evt.type == NetEventType.ServerInitialized:
             self.listening = True
         elif evt.type == NetEventType.ServerInitFailed:
             #
             print("Listening failed")
-            
-            
-
         elif evt.type == NetEventType.ReliableMessageReceived:
             msg : str = evt.data_to_text()
-            await self.peer.forward_message(msg)
+            peer = self.getPeer(evt.connection_id)
+            if peer:
+                await peer.forward_message(msg)
+            else:
+                print("message for unknown connect received id " + str(evt.connection_id))
     
     async def dispose(self):
-        if self.peer:
-            await self.peer.dispose()
+        for p in self.peers.values():
+            await p.dispose()
 

@@ -6,7 +6,7 @@ import websockets
 from websockets.sync.client import ClientConnection
 
 from websockets.exceptions import ConnectionClosed
-
+from typing import Final
 
 #TODO: remove default value and force the proper use of ids for send calls
 #check if using await next_message() makes sense in the long run
@@ -37,6 +37,29 @@ class NetEventDataType(Enum):
 class ConnectionId:
     def __init__(self, id):
         self.id = id
+    
+    
+    def __hash__(self):
+        return hash(self.id)
+
+    def __eq__(self, other):
+        if isinstance(other, ConnectionId):
+            return self.id == other.id
+        return False
+
+    def __lt__(self, other):
+        if isinstance(other, ConnectionId):
+            return self.id < other.id
+        return NotImplemented
+
+    def __repr__(self):
+        return f"ConnectionId({self.id})"
+    
+    @classmethod
+    def INVALID(cls):
+        return cls(-1)
+    
+    
 
 class NetworkEvent:
     def __init__(self, t, con_id, data):
@@ -77,7 +100,7 @@ class NetworkEvent:
         output += ")]"
         return output
     
-    def data_to_text(self):
+    def data_to_text(self) -> str:
         return self._data.decode('utf-16-le')
 
     @staticmethod
