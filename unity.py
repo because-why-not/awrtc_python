@@ -1,27 +1,22 @@
+#This is an old hardcoded test script. Do not use.
 from enum import Enum
 import time
 import asyncio
 import json
 import os
+from sdp_workarounds import proc_local_sdp
 from websocket_network import WebsocketNetwork, NetworkEvent, NetEventType
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
-
 from aiortc.contrib.media import MediaRecorder, MediaPlayer
-
-from tools import filter_vp8_codec
 from aiortc.sdp import candidate_from_sdp
 from dotenv import load_dotenv
-load_dotenv()
 
+load_dotenv()
 uri = os.getenv('SIGNALING_URI', 'ws://192.168.1.3:12776')
 address = os.getenv('ADDRESS', "abc123")
 
-
-
 recording = True
 sending = True
-
-
 
 inc_video_track = None
 inc_audio_track = None
@@ -92,12 +87,6 @@ setting_remote = False
 global message_buffer
 message_buffer = []
 
-def proc_local_sdp(sdp: str):
-
-    sdp_res = sdp.replace("a=extmap:2 urn:ietf:params:rtp-hdrext:ssrc-audio-level", "a=extmap:3 urn:ietf:params:rtp-hdrext:ssrc-audio-level")
-    #this forces VP8.
-    #sdp_res = filter_vp8_codec(sdp_res)
-    return sdp_res
 
 
 
