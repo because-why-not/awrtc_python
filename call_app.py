@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import os
 from aiortc.contrib.media import MediaPlayer
@@ -15,7 +16,14 @@ logging.basicConfig(level=logging.INFO)
 
 async def main():
     uri = os.getenv('SIGNALING_URI', 'ws://192.168.1.3:12776')
-    address = os.getenv('ADDRESS', "abc123")
+    default_address = os.getenv('ADDRESS', "abc123")
+
+
+    
+    parser = argparse.ArgumentParser(description="Run the call example application.")
+    parser.add_argument('-l', '--listen', action='store_true', help='Set to listen mode')
+    parser.add_argument('-a', '--address', default=default_address, help='Specify the address (default: %(default)s)')
+    args = parser.parse_args()
 
     # True - Read from and write to video file
     # False - Send dummy data tracks and playback via OpenCV and local speakers
@@ -27,7 +35,10 @@ async def main():
     #still need proper handling
     #Set to True to call a remote side that is waiting. Set to False to wait for the
     #remote side to connect
-    listen = False
+    listen = args.listen
+    
+    #address used to connect
+    address = args.address
 
     sending = "video.mp4"
     receiving = "inc.mp4"
