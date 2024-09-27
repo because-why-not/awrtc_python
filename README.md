@@ -3,6 +3,8 @@
 ## Introduction 
 Use this project to create a Python server or client for live video and audio streaming applications compatible with the Unity Asset "WebRTC Video Chat" ([available on Unity Asset Store](https://assetstore.unity.com/packages/tools/network/webrtc-video-chat-68030)) or awrtc_browser ([github](https://github.com/because-why-not/awrtc_browser)).
 
+
+
 ## Setup
 Install all pip modules via:
    ```
@@ -49,3 +51,13 @@ Note signaling server can only be changed if rebuild via github (change the URI 
 4. Press Join
 
 The signaling server can be changed via the Unity Editor by clicking on the CallApp object and changing the signaling server URL in the inspector. 
+
+# pitfalls
+On mac you might need to install portaudio for the setup process to work.
+This can be done via brew:
+```
+brew install portaudio
+#then reinstall pip modules
+pip install -r requirements.txt
+```
+

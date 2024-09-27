@@ -55,7 +55,7 @@ async def main():
         call.attach_track(player.audio)
     else:
         call.attach_track(TestVideoStreamTrack())
-        #call.attach_track(BeepTrack())
+        call.attach_track(BeepTrack())
     
     
     try:

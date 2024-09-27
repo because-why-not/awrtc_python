@@ -5,3 +5,5 @@ __pycache__
 internal_*
 activate
 private
+myenv
+.DS_Store

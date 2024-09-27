@@ -25,6 +25,8 @@ class TracksProcessor(ABC):
         pass
 
 class LocalPlayback(TracksProcessor):
+    _counter = 0  
+
     def __init__(self, name: str, logger: PrefixLogger):
         self.logger = logger.get_child("LocalPlayback")
         self._name: str = name
@@ -65,7 +67,8 @@ class LocalPlayback(TracksProcessor):
 
     def _process_video(self, track: MediaStreamTrack) -> None:
         async def video_worker() -> None:
-            window_name = "Video " + self._name
+            LocalPlayback._counter += 1
+            window_name = "Video " + self._name + "" + str(LocalPlayback._counter)
             try:
                 while not self._stop_flag:
                     frame = await track.recv()
