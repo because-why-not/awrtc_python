@@ -130,8 +130,7 @@ class FileStreaming(TracksProcessor):
 
     def __init__(self, filename: str, logger: PrefixLogger):
         self.logger = logger.get_child("FileStreaming")
-        options={'ignore_decode_errors': '1'}
-        self._recorder: MediaRecorder = MediaRecorder(filename, None, options)
+        self._recorder: MediaRecorder = MediaRecorder(filename, None, None)
 
     async def on_start(self) -> None:
         self.logger.info("Starting recording ...")
@@ -208,12 +207,14 @@ def parse_args():
     load_dotenv()
     default_address = os.getenv('ADDRESS', "abc123")
     parser = argparse.ArgumentParser(description="Run the call example application.")
+
+    parser.add_argument('address', nargs='?', default=default_address, 
+                        help='Specify the address / passphrase (default: %(default)s)')
     parser.add_argument('-l', '--listen', action='store_true', help='Set to listen mode')
-    parser.add_argument('-a', '--address', default=default_address, help='Specify the address (default: %(default)s)')
     parser.add_argument('--audio', nargs='?', const='dummy', default=None, 
-                        help='Specify audio device. For now only "dummy" is supported.')
+                        help='Specify audio device. For now only "dummy" is supported or no value for default.')
     parser.add_argument('--video', nargs='?', const='dummy', default=None,
-                            help='Specify video device name. Use --video without a value for default, or specify a name.')
+                            help='Specify video device name. For now only "dummy" is supported or no value for default.')
     parser.add_argument('--from-file', metavar='PATH', 
                         help='Specify a file to send audio and video from. A path must be provided.')
     parser.add_argument('--to-file', metavar='PATH', 

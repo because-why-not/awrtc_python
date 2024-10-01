@@ -23,26 +23,28 @@ To run a first test, open two terminal windows and run:
 
 In terminal 1:
 ```
-python call_app.py -l -a test1234
+python call_app.py -l test1234 --video --audio
 ```
 
 In terminal 2:
 ```
-python call_app.py -a test1234
+python call_app.py test1234
 ```
 
-Two windows should open with a test video feed. You can edit `call_app.py` to customize the tracks being sent.
+The first app will now stream a dummy video feed to the second. The second will playback video and audio received.
+
 
 ## Testing via Browser
 To stream from/to the browser, run the following in the terminal:
 ```
-python call_app.py -l -a test1234
+python call_app.py -l test1234 --video --audio
 ```
 
 To connect to the browser open the [Browser CallApp Example](https://because-why-not.com/webrtc/callapp.html?a=test1234) and press join
 or build your own via the ([awrtc_browser github](https://github.com/because-why-not/awrtc_browser)).
 Note signaling server can only be changed if rebuild via github (change the URI [here](https://github.com/because-why-not/awrtc_browser/blob/master/src/apps/callapp.ts#L74)). 
 
+## Other examples
 
 ## Testing via Cross-platform Unity Asset WebRTC Video Chat
 1. Open the scene `callapp/callscene`
@@ -51,6 +53,18 @@ Note signaling server can only be changed if rebuild via github (change the URI 
 4. Press Join
 
 The signaling server can be changed via the Unity Editor by clicking on the CallApp object and changing the signaling server URL in the inspector. 
+
+Wait for another user to connect and then send video from a file:
+
+```
+python call_app.py -l test1234 --from-file your_video.mp4
+```
+
+Save incoming audio and video to a file (will overwrite files without warning!):
+
+```
+python call_app.py -l test1234 --to-file out_video.mp4
+```
 
 # pitfalls
 On mac you might need to install portaudio for the setup process to work.
