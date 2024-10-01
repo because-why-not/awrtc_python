@@ -1,3 +1,31 @@
+'''
+Test scenario:
+1. Call python relay.py. This will automatically listen on the address "usera" and "userb"
+2. Open the call app in the Unity Editor or in the browser:
+https://because-why-not.com/files/webrtcsamples/v1.0.4/awrtc_browser/callapp.html
+3. Tick video and audio in the app and enter "usera" and press join
+Wait until the app connects to the server. You should see log looking like this:
+INFO:relayapp.relay_usera:Call accepted for connection ConnectionId(16384)
+INFO:relayapp.relay_usera.RelayTracksProcessor:Starting recording ...
+
+4. In another instance of call app untick audio and video, enter "userb" and then press join
+You should see another message: 
+INFO:relayapp.relay_userb:Call accepted for connection ConnectionId(16384)
+(Note: The server will attempt to record audio/video from the 2nd app but it can not yet relay it)
+
+5. The first call app should now be streaming audio and video to the second. The server is relaying this media
+data and recording at the same time. 
+
+6. Exit the server by pressing ctrl + C
+
+Known issues so far:
+* Framerate and quality will be worse 
+* Error still happens randomly which will stop the video feed:
+[libx264 @ 0000029baceaa140] non-strictly-monotonic PTS
+[mp4 @ 0000029baa72e900] Application provided invalid, non monotonically increasing dts to muxer in stream 1: 245760 >= 245760
+* Relay only works in one direction
+
+'''
 import asyncio
 import os
 from aiortc.contrib.media import MediaPlayer, MediaRecorder
@@ -17,7 +45,6 @@ logging.basicConfig(level=logging.INFO)
 uri = os.getenv('SIGNALING_URI', 'ws://192.168.1.3:12776')
 gLogger = PrefixLogger("relayapp")
 gLogger.info("app logger started")
-
 
 class RelayTracksProcessor(TracksProcessor):
 
@@ -51,8 +78,8 @@ class RelayCall(CallEventHandler):
     processor: RelayTracksProcessor
     call: Call
     address: str
-    inc_video_track: MediaStreamTrack
-    inc_audio_track: MediaStreamTrack
+    inc_video_track: MediaStreamTrack | None
+    inc_audio_track: MediaStreamTrack | None
 
     other: 'RelayCall'
 
@@ -62,6 +89,8 @@ class RelayCall(CallEventHandler):
         self.address = address
         self.logger = gLogger.get_child("relay_" + address)
         self.processor = RelayTracksProcessor(address + ".mp4", self.logger)
+        self.inc_video_track = None
+        self.inc_audio_track = None
         self.call = Call(uri, self, False)
     
     def setOther(self, other: 'RelayCall'):
@@ -76,15 +105,17 @@ class RelayCall(CallEventHandler):
     
     async def on_start(self):
         await self.processor.on_start()
-        await self.other.attach(self.inc_video_track, self.inc_audio_track)
+        self.other.attach(self.inc_video_track, self.inc_audio_track)
     
-    async def attach(self, video_track: MediaStreamTrack, audio_track: MediaStreamTrack):
-        self.call.attach_track(video_track)
-        self.call.attach_track(audio_track)
+    def attach(self, video_track: MediaStreamTrack | None, audio_track: MediaStreamTrack | None):
+        if video_track is not None:
+            self.call.attach_track(video_track)
+        if audio_track is not None:
+            self.call.attach_track(audio_track)
         
 
     async def on_end(self):
-        await self.processor.on_end()
+        await self.processor.on_stop()
 
     async def on_call_event(self, args: CallEventArgs) -> None:
         if isinstance(args, CallAcceptedEventArgs):
@@ -129,8 +160,8 @@ async def main():
         print("CancelledError triggered. Starting controlled shutdown")
     finally:
         print("Shutting down...")
-        await loop_usera.dispose()
-        await loop_userb.dispose()
+        await call_usera.dispose()
+        await call_userb.dispose()
         print("Shutdown complete.")
 
 if __name__ == "__main__":
