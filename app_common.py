@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
+import argparse
 import asyncio
+from dataclasses import dataclass
 import logging
+import os
 from typing import Dict, Optional, Tuple
 import signal
 import cv2
@@ -10,6 +13,11 @@ from aiortc.mediastreams import MediaStreamTrack
 from call_events import CallAcceptedEventArgs, CallEndedEventArgs, CallEventArgs, CallEventType, TrackUpdateEventArgs
 from call_peer import CallEventHandler
 from prefix_logger import PrefixLogger
+
+from aiortc.mediastreams import AudioStreamTrack, VideoStreamTrack, MediaStreamTrack
+from dotenv import load_dotenv
+from tracks import BeepTrack, MediaSourceNotFoundException, TestVideoStreamTrack
+
 
 class TracksProcessor(ABC):
     @abstractmethod
@@ -122,7 +130,8 @@ class FileStreaming(TracksProcessor):
 
     def __init__(self, filename: str, logger: PrefixLogger):
         self.logger = logger.get_child("FileStreaming")
-        self._recorder: MediaRecorder = MediaRecorder(filename)
+        options={'ignore_decode_errors': '1'}
+        self._recorder: MediaRecorder = MediaRecorder(filename, None, options)
 
     async def on_start(self) -> None:
         self.logger.info("Starting recording ...")
@@ -152,11 +161,12 @@ class CallAppEventHandler(CallEventHandler):
 
     def _get_or_create_processor(self, connection_id: str) -> TracksProcessor:
         if connection_id not in self._connections:
+            processor: TracksProcessor 
             if self._filename_prefix:
                 filename = f"{self._filename_prefix}_{str(connection_id)}.mp4"
-                processor: TracksProcessor = FileStreaming(filename, self.logger)
+                processor = FileStreaming(filename, self.logger)
             else:
-                processor: TracksProcessor = LocalPlayback(str(connection_id), self.logger)
+                processor = LocalPlayback(str(connection_id), self.logger)
             self._connections[connection_id] = processor
         return self._connections[connection_id]
 
@@ -190,3 +200,80 @@ def setup_signal_handling(task: asyncio.Task):
         task.cancel()
     signal.signal(signal.SIGINT, _signal_handler)
     signal.signal(signal.SIGTERM, _signal_handler)
+
+
+
+
+def parse_args():
+    load_dotenv()
+    default_address = os.getenv('ADDRESS', "abc123")
+    parser = argparse.ArgumentParser(description="Run the call example application.")
+    parser.add_argument('-l', '--listen', action='store_true', help='Set to listen mode')
+    parser.add_argument('-a', '--address', default=default_address, help='Specify the address (default: %(default)s)')
+    parser.add_argument('--audio', nargs='?', const='dummy', default=None, 
+                        help='Specify audio device. For now only "dummy" is supported.')
+    parser.add_argument('--video', nargs='?', const='dummy', default=None,
+                            help='Specify video device name. Use --video without a value for default, or specify a name.')
+    parser.add_argument('--from-file', metavar='PATH', 
+                        help='Specify a file to send audio and video from. A path must be provided.')
+    parser.add_argument('--to-file', metavar='PATH', 
+                        help='Specify a file to store video at')
+    
+            
+    args = parser.parse_args()
+    
+    print("Set flags:")
+    for arg, value in vars(args).items():
+        if value is not None and value is not False:
+            print(f"  {arg}: {value}")
+    return args
+
+def get_video_track(video_arg: str | None) -> VideoStreamTrack | None:
+    if video_arg is None:
+        return None
+    elif video_arg.lower() in ["dummy"]:
+        #using the dummy video device as default for now
+        return TestVideoStreamTrack()
+    else:
+        raise MediaSourceNotFoundException(f"Unknown video source: {video_arg}")
+
+def get_audio_track(audio_arg: str | None) -> AudioStreamTrack | None:
+    if audio_arg is None:
+        return None
+    elif audio_arg.lower() in ["dummy"]:
+        #using the dummy video device as default for now
+        return BeepTrack()
+    else:
+        raise MediaSourceNotFoundException(f"Unknown video source: {audio_arg}")
+
+
+@dataclass
+class MediaTracks:
+    video: MediaStreamTrack | None
+    audio: MediaStreamTrack | None
+
+    def __iter__(self):
+        return iter((self.video, self.audio))
+
+def get_tracks_from_file(path: str | None, to: MediaTracks):
+    if path is None:
+        return MediaTracks(video=None, audio=None)
+    player = MediaPlayer(path, loop=True)
+    to.video = player.video
+    to.audio = player.audio
+    return 
+
+#This gets tracks based on the arguments used
+def get_tracks_from_args(args) -> MediaTracks:
+    tracks = MediaTracks(video=None, audio=None)
+
+    #try get tracks from the file first
+    get_tracks_from_file(args.from_file, tracks)
+
+    #tracks from the --video and --audio flags
+    if tracks.video is None:
+        tracks.video = get_video_track(args.video)
+
+    if tracks.audio is None:
+        tracks.audio = get_audio_track(args.audio)
+    return tracks

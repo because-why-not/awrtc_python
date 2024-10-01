@@ -220,3 +220,12 @@ class SineWaveTrack(AudioStreamTrack):
         """Allow dynamic change of frequency for testing"""
         self.frequency = new_frequency
         logger.info(f"Changed frequency to {new_frequency} Hz")
+
+class MediaSourceNotFoundException(Exception):
+    """Exception raised when a media source is not found."""
+    
+    def __init__(self, source, message="Media source not found"):
+        self.source = source
+        self.message = f"{message}: {source}"
+        super().__init__(self.message)
+

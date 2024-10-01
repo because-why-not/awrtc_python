@@ -2,13 +2,9 @@ import argparse
 import asyncio
 import os
 from aiortc.contrib.media import MediaPlayer
-from dotenv import load_dotenv
-from app_common import CallAppEventHandler, setup_signal_handling
+from app_common import CallAppEventHandler, get_tracks_from_args, parse_args, setup_signal_handling
 from call import Call
 from tracks import BeepTrack, TestVideoStreamTrack
-
-load_dotenv()
-
 import logging
 logging.basicConfig(level=logging.INFO)
 
@@ -16,19 +12,10 @@ logging.basicConfig(level=logging.INFO)
 
 async def main():
     uri = os.getenv('SIGNALING_URI', 'ws://192.168.1.3:12776')
-    default_address = os.getenv('ADDRESS', "abc123")
 
+    args = parse_args()
 
-    
-    parser = argparse.ArgumentParser(description="Run the call example application.")
-    parser.add_argument('-l', '--listen', action='store_true', help='Set to listen mode')
-    parser.add_argument('-a', '--address', default=default_address, help='Specify the address (default: %(default)s)')
-    args = parser.parse_args()
-
-    # True - Read from and write to video file
-    # False - Send dummy data tracks and playback via OpenCV and local speakers
-    video_file = False
-
+        
     
     #TODO: Add the join mechanics that tries both listen / call
     #for this to work the connection failed / listening failed event in the call.py
@@ -40,22 +27,17 @@ async def main():
     #address used to connect
     address = args.address
 
-    sending = "video.mp4"
-    receiving = "inc.mp4"
-    if video_file:
-        track_handler = CallAppEventHandler(receiving)
-    else:
-        track_handler = CallAppEventHandler()
-
+    #either gets tracks from the --from-file flag or from --video / --audio
+    video_track, audio_track = get_tracks_from_args(args)
+    
+    track_handler = CallAppEventHandler(args.to_file)
     call  = Call(uri, track_handler)
-
-    if video_file:
-        player = MediaPlayer(sending, loop=True)
-        call.attach_track(player.video)
-        call.attach_track(player.audio)
-    else:
-        call.attach_track(TestVideoStreamTrack())
-        call.attach_track(BeepTrack())
+    
+    if video_track:
+        call.attach_track(video_track)
+    
+    if audio_track:
+        call.attach_track(audio_track)
     
     
     try:
@@ -75,6 +57,7 @@ async def main():
         print("Shutting down...")
         await call.dispose()
         print("Shutdown complete.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
