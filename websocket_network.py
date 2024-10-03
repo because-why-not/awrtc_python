@@ -6,7 +6,7 @@ import websockets
 from websockets.sync.client import ClientConnection
 
 from websockets.exceptions import ConnectionClosed
-from typing import Final, Optional
+from typing import Awaitable, Callable, Final, Optional
 from prefix_logger import PrefixLogger
 
 #TODO: remove default value and force the proper use of ids for send calls
@@ -173,6 +173,8 @@ class WebsocketNetworkError(Exception):
     pass
 
 
+NetworkEventHandler = Callable[[NetworkEvent], Awaitable[None]]
+
 class WebsocketNetwork:
     '''
     Limited version of WebsocketNetwork. Can connect to the signaling server and then indirectly connect to
@@ -185,11 +187,11 @@ class WebsocketNetwork:
         self.mSocket : Optional[websockets.WebSocketClientProtocol]= None 
         self.mRemoteProtocolVersion = None
         self.mHeartbeatReceived = False
-        self.event_handlers = []  
+        self.event_handlers : list[NetworkEventHandler]= []  
 
     
-    def register_event_handler(self, handler):
-        self.event_handlers.append(handler)  #
+    def register_event_handler(self, handler: NetworkEventHandler):
+        self.event_handlers.append(handler) 
         
     async def start(self, uri):
         self.mSocket = await websockets.connect(uri)
@@ -197,7 +199,7 @@ class WebsocketNetwork:
         if self.mSocket is not None:
             await self.send_version()
             response = await self.mSocket.recv()
-            self.parse_message(response)
+            await self.process_message(response)
             self.logger.info("Ready to exchange messages")
     
     async def connect(self, address: str):
@@ -213,7 +215,7 @@ class WebsocketNetwork:
             raise WebsocketNetworkError("WebSocket connection not established")
         try:
             async for message in self.mSocket:
-                self.parse_message(message)
+                await self.process_message(message)
         except ConnectionClosed:
             self.logger.warning("Connection closed")
         except Exception as e:
@@ -253,7 +255,7 @@ class WebsocketNetwork:
             raise WebsocketNetworkError("WebSocket connection not established")
         await self.mSocket.send(msg)
 
-    def parse_message(self, msg):
+    async def process_message(self, msg):
         if len(msg) == 0:
             pass
         elif msg[0] == NetEventType.MetaVersion.value:
@@ -266,12 +268,12 @@ class WebsocketNetwork:
             self.mHeartbeatReceived = True
         else:
             evt = NetworkEvent.from_byte_array(msg)
-            self.handle_incoming_event(evt)
+            await self.handle_incoming_event(evt)
 
-    def handle_incoming_event(self, evt: NetworkEvent):
-        self.logger.debug(f"Event {evt}")
+    async def handle_incoming_event(self, evt: NetworkEvent):
+        self.logger.debug(f"Signaling event {evt}")
         for handler in self.event_handlers:
-            asyncio.create_task(handler(evt)) 
+            await handler(evt)
     
     async def dispose(self):
         await self.shutdown()

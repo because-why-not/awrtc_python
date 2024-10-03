@@ -2,9 +2,9 @@ import asyncio
 import json
 import random
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import Awaitable, Callable, List, Optional
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCDataChannel, RTCRtpTransceiver, MediaStreamTrack 
-from aiortc.contrib.media import MediaPlayer, MediaRecorder
+from aiortc.contrib.media import MediaPlayer
 from aiortc.sdp import candidate_from_sdp
 from call_events import CallAcceptedEventArgs, CallEndedEventArgs, CallEventArgs, CallEventType, TrackUpdateEventArgs
 from websocket_network import ConnectionId
@@ -41,7 +41,10 @@ class OldCallEventHandler(CallEventHandler):
             self.on_track(args.track)
         
 
+SignalingCallback = Callable[['CallPeer', str], Awaitable[None]]
 class CallPeer:
+    
+
     def __init__(self, connection_id : ConnectionId, track_observer: CallEventHandler, logger: PrefixLogger):
         self.logger = logger.get_child("CallPeer" + str(connection_id.id))
         self.peer = RTCPeerConnection()
@@ -58,7 +61,7 @@ class CallPeer:
 
         self.has_ended = False
 
-        self._observers = []
+        self._observers:list[SignalingCallback] = []
         # Setup peer connection event handlers
         self.peer.on("track", self.on_track)
         self.peer.on("connectionstatechange", self.on_connectionstatechange)
@@ -78,10 +81,10 @@ class CallPeer:
         elif datachannel.label == DATA_CHANNEL_UNRELIABLE:
             self.dc_unreliable = datachannel
 
-    def on_signaling_message(self, observer_function):
+    def on_signaling_message(self, observer_function: SignalingCallback):
         self._observers.append(observer_function)
 
-    async def trigger_on_signaling_message(self, message):
+    async def trigger_on_signaling_message(self, message: str):
         
         self.logger.info(f"SIG OUT: {message}")
         for observer in self._observers:

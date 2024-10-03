@@ -67,7 +67,7 @@ class Call(CallEventHandler):
         else:
             self.out_audio_track = track
 
-    async def on_peer_signaling_message(self, peer, msg: str):
+    async def on_peer_signaling_message(self, peer: CallPeer, msg: str):
         self.logger.debug(f"Sending: {msg}")
         await self.network.send_text(msg, peer.connection_id)
 
@@ -77,6 +77,7 @@ class Call(CallEventHandler):
         #wait for connection
         await self.network.listen(address)
         self.in_signaling = True
+        self.logger.info(f"Listening on {address}")
         #loop and wait for messages.
         #they are returned via the event handler
         await self.network.process_messages()
@@ -87,6 +88,7 @@ class Call(CallEventHandler):
         #connect to another client waiting
         await self.network.connect(address)
         self.in_signaling = True
+        self.logger.info(f"Connecting to {address}")
         #loop and wait for messages.
         #they are returned via the event handler
         await self.network.process_messages()
@@ -102,9 +104,9 @@ class Call(CallEventHandler):
         await self.network.send_text(message)
     
     async def signaling_event_handler(self, evt: NetworkEvent):    
-        self.logger.debug(f"Received event of type {evt.type}")
+        self.logger.debug(f"Received signaling event of type {evt.type}")
         if evt.type == NetEventType.NewConnection:
-            self.logger.info("NewConnection event")
+            self.logger.info("Signaling NewConnection event")
             peer = self.createPeer(evt.connection_id)
             
             #TODO: we need an event handler to 
@@ -120,14 +122,14 @@ class Call(CallEventHandler):
                 
         elif evt.type == NetEventType.ConnectionFailed:
             #peer = self.getPeer(evt.connection_id)
-            self.logger.warning(f"ConnectionFailed event {evt.connection_id}")
+            self.logger.warning(f"Signaling ConnectionFailed event {evt.connection_id}")
             
         elif evt.type == NetEventType.Disconnected:
             peer = self.getPeer(evt.connection_id)
             #For conference mode we expect signaling connections to remain open
             #to detect new users joining
             #for 1 to 1 we close them to reduce server load
-            self.logger.info(f"Disconnected event {evt.connection_id}")
+            self.logger.info(f"Signaling Disconnected event {evt.connection_id}")
             if peer is not None:
                 if self.is_conference:
                     await peer.close()

@@ -1,12 +1,15 @@
 import asyncio
 import colorsys
+from dataclasses import dataclass
 import fractions
+from aiortc.contrib.media import MediaRecorderContext
 import cv2
 import numpy as np
 import time
+import av
 from av import VideoFrame
 from aiortc import VideoStreamTrack
-from aiortc.mediastreams import AudioStreamTrack
+from aiortc.mediastreams import AudioStreamTrack, MediaStreamError, MediaStreamTrack
 from av import AudioFrame
 import logging
 logger = logging.getLogger(__name__)
@@ -229,3 +232,152 @@ class MediaSourceNotFoundException(Exception):
         self.message = f"{message}: {source}"
         super().__init__(self.message)
 
+
+
+
+
+class CustomMediaRecorderContext:
+    def __init__(self, stream) -> None:
+        self.started = False
+        self.stream = stream
+        self.task : asyncio.Task[None] | None= None
+@dataclass
+class RecorderConfig:
+    #recording width. If not defaults to the width of the first frame
+    width:int| None = None
+    #recording height. If not defaults to the height of the first frame
+    height:int| None = None
+    #rate set when calling add_stream.
+    #This is suppose to be the frame rate of the incoming video but
+    #WebRTC can change on the fly. Depending on codecs used this might lead to errors
+    #but most should support variable framerates no matter what is set here
+    rate: int = 60
+    video_bit_rate:int| None = None
+    #webm file is written this can be used to set vp8 or vp9
+    video_stream_codec:str| None = None
+    container_format: str | None = None
+    container_options = None
+
+
+class CustomMediaRecorder:
+    """
+    Directly based on MediaRecorder from
+    https://github.com/aiortc/aiortc/blob/main/src/aiortc/contrib/media.py
+    Added VP8 support (picked when webm is used as suffix)
+
+    """
+
+    def __init__(self, file, config: RecorderConfig = RecorderConfig()):
+        self.__container = av.open(file=file, format=config.container_format, mode="w", options=config.container_options)
+        self.__tracks : dict[MediaStreamTrack, CustomMediaRecorderContext]= {}
+        self._config = config
+        #used to check the frame timing
+        self.VERBOSE = False
+        self._last_video_frame = 0
+        self._last_video_package = 0
+        
+
+    def addTrack(self, track: MediaStreamTrack) -> None:
+        """
+        Add a track to be recorded.
+
+        :param track: A :class:`aiortc.MediaStreamTrack`.
+        """
+        if track.kind == "audio":
+            if self.__container.format.name in ("wav", "alsa", "pulse"):
+                codec_name = "pcm_s16le"
+            elif self.__container.format.name == "mp3":
+                codec_name = "mp3"     
+            if self.__container.format.name in ("webm"):
+                codec_name = "libopus"
+            else:
+                codec_name = "aac"
+            stream = self.__container.add_stream(codec_name)
+        else:
+
+            if self.__container.format.name == "image2":
+                stream = self.__container.add_stream("png", rate=self._config.rate)
+                stream.pix_fmt = "rgb24"
+            elif self.__container.format.name == "webm":
+                codec = "vp8" if self._config.video_stream_codec is None else self._config.video_stream_codec
+                stream = self.__container.add_stream(codec)
+                stream.pix_fmt = "yuv420p"
+            else:
+                stream = self.__container.add_stream("libx264", rate=self._config.rate)
+                stream.pix_fmt = "yuv420p"
+            #this line appears to fix error non-strictly-monotonic PTS error
+            stream.time_base = fractions.Fraction(1, 90000)
+        self.__tracks[track] = CustomMediaRecorderContext(stream)
+        
+
+    async def start(self) -> None:
+        """
+        Start recording.
+        """
+        for track, context in self.__tracks.items():
+            if context.task is None:
+                context.task = asyncio.ensure_future(self.__run_track(track, context))
+
+    async def stop(self) -> None:
+        """
+        Stop recording.
+        """
+        if self.__container:
+            for track, context in self.__tracks.items():
+                if context.task is not None:
+                    context.task.cancel()
+                    context.task = None
+                    for packet in context.stream.encode(None):
+                        self.__container.mux(packet)
+            self.__tracks = {}
+
+            if self.__container:
+                self.__container.close()
+                self.__container = None
+
+    async def __run_track(
+        self, track: MediaStreamTrack, context: CustomMediaRecorderContext ) -> None:
+        while True:
+            try:
+                frame = await track.recv()
+            except MediaStreamError:
+                return
+
+            if not context.started:
+                # set width/height and bitrate if available
+                if isinstance(frame, VideoFrame):
+                    context.stream.width = self._config.width if self._config.width is not None else frame.width
+                    context.stream.height = self._config.height if self._config.height is not None else frame.height
+                    if self._config.video_bit_rate is not None:
+                        context.stream.bit_rate = self._config.video_bit_rate 
+                context.started = True
+            
+            if isinstance(frame, VideoFrame):
+                diff = frame.pts - self._last_video_frame
+                self._last_video_frame = frame.pts
+                if self.VERBOSE:
+                    logger.info(f"MediaRecorder video frame pts {frame.pts} diff {diff}")
+
+            for packet in context.stream.encode(frame):
+                if isinstance(frame, VideoFrame):
+                    if self.VERBOSE:
+                        logger.info(f"MediaRecorder video packet dts {packet.dts}")
+                    #for libx264 drop packages that have the same dts. This happens when we receive 
+                    #too many frames / frames with pts too close together
+                    if self._last_video_package > 0 and self._last_video_package == packet.dts and context.stream.name == "libx264":
+                        #fallback to prevent crash of libx264
+                        logger.warning(f"MediaRecorder will drop duplicate package with dts {packet.dts}. " 
+                                       + " This can happen if libx264 receives more frames than the set framerate or the timestamp is too close together")
+                        continue
+                    self._last_video_package = packet.dts
+                    
+                self.__container.mux(packet)
+    
+    @staticmethod
+    def get_default_config():
+        config = RecorderConfig()
+        config.video_bit_rate = 2_500_000
+        config.width = 1280
+        config.height = 720
+        config.rate = 60
+        return config

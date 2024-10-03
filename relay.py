@@ -28,7 +28,6 @@ Known issues so far:
 '''
 import asyncio
 import os
-from aiortc.contrib.media import MediaPlayer, MediaRecorder
 from aiortc.mediastreams import MediaStreamTrack
 from dotenv import load_dotenv
 
@@ -37,6 +36,7 @@ from call import Call
 from call_events import CallAcceptedEventArgs, CallEndedEventArgs, CallEventArgs, TrackUpdateEventArgs
 from call_peer import CallEventHandler
 from prefix_logger import PrefixLogger
+from tracks import CustomMediaRecorder
 
 load_dotenv()
 import logging
@@ -50,7 +50,8 @@ class RelayTracksProcessor(TracksProcessor):
 
     def __init__(self, filename: str, logger: PrefixLogger):
         self.logger = logger.get_child("RelayTracksProcessor")
-        self._recorder: MediaRecorder = MediaRecorder(filename)
+        config = CustomMediaRecorder.get_default_config()
+        self._recorder: CustomMediaRecorder = CustomMediaRecorder(filename, config)
 
     async def on_start(self) -> None:
         self.logger.info("Starting recording ...")

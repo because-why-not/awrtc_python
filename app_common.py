@@ -8,7 +8,7 @@ from typing import Dict, Optional, Tuple
 import signal
 import cv2
 import pyaudio
-from aiortc.contrib.media import MediaPlayer, MediaRecorder
+from aiortc.contrib.media import MediaPlayer
 from aiortc.mediastreams import MediaStreamTrack
 from call_events import CallAcceptedEventArgs, CallEndedEventArgs, CallEventArgs, CallEventType, TrackUpdateEventArgs
 from call_peer import CallEventHandler
@@ -16,7 +16,8 @@ from prefix_logger import PrefixLogger
 
 from aiortc.mediastreams import AudioStreamTrack, VideoStreamTrack, MediaStreamTrack
 from dotenv import load_dotenv
-from tracks import BeepTrack, MediaSourceNotFoundException, TestVideoStreamTrack
+from tracks import BeepTrack, CustomMediaRecorder, MediaSourceNotFoundException, RecorderConfig, TestVideoStreamTrack
+from websocket_network import ConnectionId
 
 
 class TracksProcessor(ABC):
@@ -129,8 +130,9 @@ class LocalPlayback(TracksProcessor):
 class FileStreaming(TracksProcessor):
 
     def __init__(self, filename: str, logger: PrefixLogger):
-        self.logger = logger.get_child("FileStreaming")
-        self._recorder: MediaRecorder = MediaRecorder(filename, None, None)
+        self.logger = logger.get_child("FileStreaming")      
+        config = CustomMediaRecorder.get_default_config()
+        self._recorder: CustomMediaRecorder = CustomMediaRecorder(filename, config)
 
     async def on_start(self) -> None:
         self.logger.info("Starting recording ...")
@@ -153,16 +155,23 @@ def setup_app_logger():
 
 
 class CallAppEventHandler(CallEventHandler):
-    def __init__(self, filename_prefix: Optional[str] = None):
+    def __init__(self, filename: Optional[str] = None):
         self.logger = setup_app_logger()
-        self._filename_prefix: Optional[str] = filename_prefix
-        self._connections: Dict[str, TracksProcessor] = {}
-
-    def _get_or_create_processor(self, connection_id: str) -> TracksProcessor:
+        self.filename: Optional[str] = filename
+        self._connections: Dict[ConnectionId, TracksProcessor] = {}
+        self.counter = 0
+    
+    def _get_or_create_processor(self, connection_id: ConnectionId) -> TracksProcessor:
         if connection_id not in self._connections:
             processor: TracksProcessor 
-            if self._filename_prefix:
-                filename = f"{self._filename_prefix}_{str(connection_id)}.mp4"
+            if self.filename:
+                if self.counter == 0: 
+                    filename = self.filename
+                else:
+                    name, ext = os.path.splitext(self.filename)
+                    filename = f"{name}_{self.counter}.{ext}"
+                
+                self.counter += 1
                 processor = FileStreaming(filename, self.logger)
             else:
                 processor = LocalPlayback(str(connection_id), self.logger)
@@ -170,22 +179,23 @@ class CallAppEventHandler(CallEventHandler):
         return self._connections[connection_id]
 
     async def on_call_event(self, args: CallEventArgs) -> None:
+        
         if isinstance(args, CallAcceptedEventArgs):
-            connection_id: str = args.connection_id
-            processor: TracksProcessor = self._get_or_create_processor(connection_id)
+            connection_id = args.connection_id
+            processor = self._get_or_create_processor(connection_id)
             self.logger.info(f"Call accepted for connection {connection_id}")
             await processor.on_start()
 
         elif isinstance(args, CallEndedEventArgs):
-            connection_id: str = args.connection_id
+            connection_id = args.connection_id
             if connection_id in self._connections:
                 self.logger.info(f"Call ended for connection {connection_id}")
                 await self._connections[connection_id].on_stop()
                 del self._connections[connection_id]
 
         elif isinstance(args, TrackUpdateEventArgs):
-            connection_id: str = args.connection_id
-            processor: TracksProcessor = self._get_or_create_processor(connection_id)
+            connection_id = args.connection_id
+            processor = self._get_or_create_processor(connection_id)
             self.logger.info(f"Track update for connection {connection_id}")
             processor.on_track(args.track)
 

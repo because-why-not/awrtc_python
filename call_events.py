@@ -26,19 +26,19 @@ class CallEventArgs:
 
 
 class CallAcceptedEventArgs(CallEventArgs):
-    def __init__(self, connection_id):
+    def __init__(self, connection_id: ConnectionId):
         super().__init__(CallEventType.CALL_ACCEPTED)
         self.connection_id = connection_id
 
 class CallEndedEventArgs(CallEventArgs):
-    def __init__(self, connection_id):
+    def __init__(self, connection_id: ConnectionId):
         super().__init__(CallEventType.CALL_ENDED)
-        self.connection_id = connection_id
+        self.connection_id: ConnectionId = connection_id
 
 class TrackUpdateEventArgs(CallEventArgs):
-    def __init__(self, connection_id, track: MediaStreamTrack):
+    def __init__(self, connection_id: ConnectionId, track: MediaStreamTrack):
         super().__init__(CallEventType.TRACK_UPDATE)
-        self.connection_id = connection_id
+        self.connection_id: ConnectionId = connection_id
         self.track = track
 
 class ErrorInfo:
@@ -64,7 +64,7 @@ class WaitForIncomingCallEventArgs(CallEventArgs):
         self.address = address
 
 class MessageEventArgs(CallEventArgs):
-    def __init__(self, connection_id, content: str, reliable: bool = True):
+    def __init__(self, connection_id: ConnectionId, content: str, reliable: bool = True):
         super().__init__(CallEventType.MESSAGE)
         self.connection_id = connection_id
         self.content = content
