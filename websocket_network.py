@@ -9,10 +9,6 @@ from websockets.exceptions import ConnectionClosed
 from typing import Awaitable, Callable, Final, Optional
 from prefix_logger import PrefixLogger
 
-#TODO: remove default value and force the proper use of ids for send calls
-#check if using await next_message() makes sense in the long run
-#how does this behave if the connection ends?
-
 class NetEventType(Enum):
     Invalid = 0
     UnreliableMessageReceived = 1

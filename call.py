@@ -115,11 +115,6 @@ class Call(CallEventHandler):
             self.logger.info("Signaling NewConnection event")
             peer = self.createPeer(evt.connection_id)
             
-            #TODO: we need an event handler to 
-            #manage all other signaling messages anyway. 
-            #no need to give the offer special treatmeant via
-            #its own call
-            
             if self.is_conference:
                 await peer.negotiate_role()
             elif self.listening == False:

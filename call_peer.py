@@ -220,8 +220,6 @@ class CallPeer:
         return None 
     
     async def create_answer(self):
-        #TODO: we must attach our tracks to the transceiver!!!
-        #!!!!
         transceivers = self.peer.getTransceivers()
         if len(transceivers) != 2: 
             #this will likely crash later
