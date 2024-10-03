@@ -1,6 +1,6 @@
 from typing import Dict, Optional
 from call_events import CallEndedEventArgs, CallEventArgs
-from prefix_logger import PrefixLogger, setup_logger
+from prefix_logger import setup_logger
 from websocket_network import ConnectionId, WebsocketNetwork, NetworkEvent, NetEventType
 from aiortc import MediaStreamTrack
 
@@ -48,13 +48,16 @@ class Call(CallEventHandler):
         
         peer.on_signaling_message(self.on_peer_signaling_message)
         
+        self.attach_tracks_peer(peer)
+        self.peers[connectionId.id] = peer
+        return peer
+    
+    def attach_tracks_peer(self, peer: CallPeer):
         if self.out_video_track:
             peer.attach_track(self.out_video_track)
         if self.out_audio_track:
             peer.attach_track(self.out_audio_track)
-        self.peers[connectionId.id] = peer
-        return peer
-    
+
     def getPeer(self, connectionId: ConnectionId):
         if connectionId.id in self.peers:
             return self.peers[connectionId.id]
@@ -66,6 +69,9 @@ class Call(CallEventHandler):
             self.out_video_track = track
         else:
             self.out_audio_track = track
+        #try to attach to already created peers
+        for p in self.peers.values():
+            self.attach_tracks_peer(p)
 
     async def on_peer_signaling_message(self, peer: CallPeer, msg: str):
         self.logger.debug(f"Sending: {msg}")

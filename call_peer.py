@@ -4,7 +4,6 @@ import random
 from abc import ABC, abstractmethod
 from typing import Awaitable, Callable, List, Optional
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCDataChannel, RTCRtpTransceiver, MediaStreamTrack 
-from aiortc.contrib.media import MediaPlayer
 from aiortc.sdp import candidate_from_sdp
 from call_events import CallAcceptedEventArgs, CallEndedEventArgs, CallEventArgs, CallEventType, TrackUpdateEventArgs
 from websocket_network import ConnectionId
@@ -73,6 +72,7 @@ class CallPeer:
             self.out_video_track = track
         else:
             self.out_audio_track = track
+        self.setup_transceivers()
 
     def on_data_channel(self, datachannel):
         self.logger.info(f"Received new data channel {datachannel.label}")
@@ -170,10 +170,14 @@ class CallPeer:
 
     
     def setup_transceivers(self):
-        if self.videoTransceiver is not None and self.out_video_track is not None:
+        #TODO: Test this in detail. Usually, the direction is reconly unless we
+        #add tracks. The advantage of setting direction = "sendrecv" here even without tracks
+        #is that we can later add them without triggering renegotiation. It might
+        #cause bugs on other platforms though
+        if self.videoTransceiver is not None:# and self.out_video_track is not None:
             self.videoTransceiver.sender.replaceTrack(self.out_video_track)
             self.videoTransceiver.direction = "sendrecv"
-        if self.audioTransceiver is not None and self.out_audio_track is not None:
+        if self.audioTransceiver is not None:# and self.out_audio_track is not None:
             self.audioTransceiver.sender.replaceTrack(self.out_audio_track)
             self.audioTransceiver.direction = "sendrecv"
 
