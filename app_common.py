@@ -8,7 +8,7 @@ from typing import Dict, Optional, Tuple
 import signal
 import cv2
 import pyaudio
-from aiortc.contrib.media import MediaPlayer
+from aiortc.contrib.media import MediaPlayer, MediaRecorder
 from aiortc.mediastreams import MediaStreamTrack
 from call_events import CallAcceptedEventArgs, CallEndedEventArgs, CallEventArgs, CallEventType, TrackUpdateEventArgs
 from call_peer import CallEventHandler
@@ -133,6 +133,8 @@ class FileStreaming(TracksProcessor):
         self.logger = logger.get_child("FileStreaming")      
         config = CustomMediaRecorder.get_default_config()
         self._recorder: CustomMediaRecorder = CustomMediaRecorder(filename, config)
+        #uncomment below and remove above line to use the original aiortc recorder
+        #self._recorder: MediaRecorder = MediaRecorder(filename)
 
     async def on_start(self) -> None:
         self.logger.info("Starting recording ...")

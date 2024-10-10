@@ -9,7 +9,7 @@ import time
 import av
 from av import VideoFrame
 from aiortc import VideoStreamTrack
-from aiortc.mediastreams import AudioStreamTrack, MediaStreamError, MediaStreamTrack
+from aiortc.mediastreams import VIDEO_TIME_BASE, AudioStreamTrack, MediaStreamError, MediaStreamTrack
 from av import AudioFrame
 import logging
 logger = logging.getLogger(__name__)
@@ -305,8 +305,9 @@ class CustomMediaRecorder:
             else:
                 stream = self.__container.add_stream("libx264", rate=self._config.rate)
                 stream.pix_fmt = "yuv420p"
-            #this line appears to fix error non-strictly-monotonic PTS error
-            stream.time_base = fractions.Fraction(1, 90000)
+            # Allows incoming FPS higher than the rate set above
+            # Fix for error "non-strictly-monotonic PTS error"
+            stream.time_base = VIDEO_TIME_BASE
         self.__tracks[track] = CustomMediaRecorderContext(stream)
         
 
