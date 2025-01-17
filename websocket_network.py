@@ -2,6 +2,7 @@ from enum import Enum
 import asyncio
 import json
 import struct
+import traceback
 import websockets
 from websockets.sync.client import ClientConnection
 
@@ -212,10 +213,10 @@ class WebsocketNetwork:
         try:
             async for message in self.mSocket:
                 await self.process_message(message)
-        except ConnectionClosed:
-            self.logger.warning("Connection closed")
+        except ConnectionClosed as e:
+            self.logger.warning(f"Connection closed {str(e)}\n{traceback.format_exc()}")
         except Exception as e:
-            self.logger.error(f"next_message triggered an exception: {str(e)}")
+            self.logger.error(f"process_messages triggered an exception:  {str(e)}\n{traceback.format_exc()}")
         
         self.logger.info("process_messages stopped")
     
