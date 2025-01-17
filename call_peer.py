@@ -2,6 +2,7 @@ import asyncio
 import json
 import random
 from abc import ABC, abstractmethod
+import traceback
 from typing import Awaitable, Callable, List, Optional
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCDataChannel, RTCRtpTransceiver, MediaStreamTrack 
 from aiortc.sdp import candidate_from_sdp
@@ -57,6 +58,9 @@ class CallPeer:
         self.out_audio_track : Optional[MediaStreamTrack] = None
         self.inc_video_track : Optional[MediaStreamTrack] = None
         self.inc_audio_track : Optional[MediaStreamTrack] = None
+
+        self.videoTransceiver: Optional[RTCRtpTransceiver]= None
+        self.audioTransceiver: Optional[RTCRtpTransceiver] = None
 
         self.has_ended = False
 
@@ -256,9 +260,9 @@ class CallPeer:
         self.logger.info("Calling close")
         try:
             await self.peer.close()
-        except asyncio.CancelledError:
-            self.logger.error("Peer connection triggered a CancelledError on close")
+        except asyncio.CancelledError as e:
+            self.logger.error(f"Peer connection triggered a CancelledError on close  {str(e)}\n{traceback.format_exc()}")
         except Exception as e:
-            self.logger.error(f"Peer connection triggered an exception on close: {str(e)}")
+            self.logger.error(f"Peer connection triggered an exception on close: {str(e)}\n{traceback.format_exc()}")
             
         self.logger.info("Peer closed")
