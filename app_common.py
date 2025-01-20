@@ -78,6 +78,9 @@ class LocalPlayback(TracksProcessor):
         async def video_worker() -> None:
             LocalPlayback._counter += 1
             window_name = "Video " + self._name + "" + str(LocalPlayback._counter)
+            # if this is the last message you see before stalling you run into
+            # a bug. See the pitfalls section of the readme!
+            self.logger.info("Opening window " + window_name)
             try:
                 while not self._stop_flag:
                     frame = await track.recv()
@@ -85,7 +88,7 @@ class LocalPlayback(TracksProcessor):
                     cv2.imshow(window_name, img)
                     if cv2.waitKey(1) & 0xFF == ord('q'):
                         break
-                #This does not yet trigger. recv above usually triggers an exception on exit
+                # This does not yet trigger. recv above usually triggers an exception on exit
                 self.logger.info("_process_video completed")
             except Exception as e:
                 self.logger.error(f"Exception during _process_video: {e}")

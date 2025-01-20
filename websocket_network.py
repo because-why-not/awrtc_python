@@ -191,7 +191,10 @@ class WebsocketNetwork:
         self.event_handlers.append(handler) 
         
     async def start(self, uri):
+
+        self.logger.info("Connecting to " + uri)
         self.mSocket = await websockets.connect(uri)
+        self.logger.info("Connected to " + uri)
         
         if self.mSocket is not None:
             await self.send_version()

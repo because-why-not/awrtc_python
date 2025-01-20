@@ -4,7 +4,6 @@
 Use this project to create a Python server or client for live video and audio streaming applications compatible with the Unity Asset "WebRTC Video Chat" ([available on Unity Asset Store](https://assetstore.unity.com/packages/tools/network/webrtc-video-chat-68030)) or awrtc_browser ([github](https://github.com/because-why-not/awrtc_browser)).
 
 
-
 ## Setup
 Install all pip modules via:
    ```
@@ -14,7 +13,7 @@ Then copy `example_.env` to `.env` and change the URLs to your own servers if ne
 
 The default values will use a free test server shared with Unity and browser side exampes.
    
-To learn how to set up the signaling server, see:
+To learn how to set up your own signaling server, see:
 - awrtc_signaling [github](https://github.com/because-why-not/awrtc_signaling)
 - awrtc_signaling for docker: [awrtc_signaling_docker](https://github.com/because-why-not/awrtc_signaling_docker)
 
@@ -66,8 +65,9 @@ Save incoming audio and video to a file (will overwrite files without warning!):
 python call_app.py -l test1234 --to-file out_video.mp4
 ```
 
-# pitfalls
-On mac you might need to install portaudio for the setup process to work.
+# Pitfalls
+## Mac
+You might need to install portaudio for the setup process to work.
 This can be done via brew:
 ```
 brew install portaudio
@@ -75,3 +75,17 @@ brew install portaudio
 pip install -r requirements.txt
 ```
 
+## Ubuntu
+Note: The example apps might stall on Ubuntu when receiving a video feed and showing it via the UI. 
+This is a bug when incompatible versions of AV and OpenCV are used. See:
+https://github.com/opencv/opencv/issues/21952
+https://github.com/PyAV-Org/PyAV/issues/978
+Outputting video to a file via --to-file works.
+
+
+You might need to install portaudio for the setup process to work.
+```
+apt install portaudio19-dev
+#then reinstall pip modules
+pip install -r requirements.txt
+```
