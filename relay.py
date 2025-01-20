@@ -144,6 +144,7 @@ class RelayCall(CallEventHandler):
 
 async def main():
 
+    load_dotenv()
     call_usera  = RelayCall("usera")
     call_userb  = RelayCall("userb")
     call_usera.setOther(call_userb)

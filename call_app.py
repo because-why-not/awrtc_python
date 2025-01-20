@@ -1,5 +1,7 @@
 import asyncio
 import os
+
+from dotenv import load_dotenv
 from app_common import CallAppEventHandler, get_tracks_from_args, parse_args, setup_signal_handling
 from call import Call
 import logging
@@ -9,6 +11,7 @@ logging.basicConfig(level=logging.INFO)
 
 async def main():
 
+    load_dotenv()
     args = parse_args()
     uri = os.getenv('SIGNALING_URI', 'ws://192.168.1.3:12776')
         
