@@ -120,7 +120,8 @@ class LocalPlayback(TracksProcessor):
                         )
                         self._current_audio_format = (sample_rate, channels, sample_format)
 
-                    self._stream.write(frame.planes[0].to_bytes())
+                    #self._stream.write(frame.planes[0].to_bytes())                    
+                    self._stream.write(bytes(frame.planes[0]))
                 #This does not yet trigger. recv above usually triggers an exception on exit
                 self.logger.info("_process_audio completed")
             except Exception as e:
