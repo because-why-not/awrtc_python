@@ -3,10 +3,10 @@ import json
 import random
 from abc import ABC, abstractmethod
 import traceback
-from typing import Awaitable, Callable, List, Optional
+from typing import Awaitable, Callable, List, Optional, Union
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCDataChannel, RTCRtpTransceiver, MediaStreamTrack 
 from aiortc.sdp import candidate_from_sdp
-from call_events import CallAcceptedEventArgs, CallEndedEventArgs, CallEventArgs, CallEventType, TrackUpdateEventArgs
+from call_events import CallAcceptedEventArgs, CallEndedEventArgs, CallEventArgs, CallEventType, DataMessageEventArgs, MessageEventArgs, TrackUpdateEventArgs
 from websocket_network import ConnectionId
 from sdp_workarounds import proc_local_sdp
 from prefix_logger import PrefixLogger
@@ -42,15 +42,16 @@ class OldCallEventHandler(CallEventHandler):
         
 
 SignalingCallback = Callable[['CallPeer', str], Awaitable[None]]
+
 class CallPeer:
     
 
-    def __init__(self, connection_id : ConnectionId, track_observer: CallEventHandler, logger: PrefixLogger):
+    def __init__(self, connection_id : ConnectionId, public_event_observer: CallEventHandler, logger: PrefixLogger):
         self.logger = logger.get_child("CallPeer" + str(connection_id.id))
         self.peer = RTCPeerConnection()
         self.connection_id = connection_id
         self.random_number : int
-        self.track_observer : CallEventHandler = track_observer
+        self.public_event_observer : CallEventHandler = public_event_observer
         self.dc_reliable : RTCDataChannel
         self.dc_unreliable : RTCDataChannel
 
@@ -70,6 +71,27 @@ class CallPeer:
         self.peer.on("connectionstatechange", self.on_connectionstatechange)
         #self.peer.on("iceconnectionstatechange", self.on_iceConnectionState)        
         self.peer.on("datachannel", self.on_data_channel)
+    
+    def configure_data_channel(self, data_channel:RTCDataChannel, reliable: bool):
+        # Set up event handlers for the data channel
+        @data_channel.on("message")
+        def on_message(message):
+            # check and throw error if string. we expect only bytes
+            if isinstance(message, str):
+                self.logger.error(f"Received strings directly. {message}")
+                return
+            if message[0] == 1:
+                # this is a byte message
+                self.logger.debug(f"Received byte message: {message[1:]}")
+                # to MessageEventArgs
+                asyncio.create_task(self.trigger_event(DataMessageEventArgs(self.connection_id, message[1:], reliable)))
+            elif message[0] == 2:
+                # this is a utf-16 string message
+                message = message[1:].decode("utf-16")
+                self.logger.debug(f"Received string message: {message}")
+                asyncio.create_task(self.trigger_event(MessageEventArgs(self.connection_id, message, reliable)))
+        
+
 
     def attach_track(self, track: MediaStreamTrack):
         if track.kind == "video":
@@ -82,8 +104,13 @@ class CallPeer:
         self.logger.info(f"Received new data channel {datachannel.label}")
         if datachannel.label == DATA_CHANNEL_RELIABLE:
             self.dc_reliable = datachannel
+            self.configure_data_channel(self.dc_reliable, True)
         elif datachannel.label == DATA_CHANNEL_UNRELIABLE:
             self.dc_unreliable = datachannel
+            self.configure_data_channel(self.dc_unreliable, False)
+        else:
+            self.logger.error(f"Unknown data channel label: {datachannel.label}")
+            
 
     def on_signaling_message(self, observer_function: SignalingCallback):
         self._observers.append(observer_function)
@@ -153,8 +180,8 @@ class CallPeer:
             
 
     async def trigger_event(self, args: CallEventArgs):
-        if self.track_observer:
-            await self.track_observer.on_call_event(args)
+        if self.public_event_observer:
+            await self.public_event_observer.on_call_event(args)
 
     async def on_connectionstatechange(self):
         self.logger.info(f"Connection state changed: {self.peer.connectionState}")
@@ -196,6 +223,8 @@ class CallPeer:
 
         self.dc_reliable = self.peer.createDataChannel(label=DATA_CHANNEL_RELIABLE)
         self.dc_unreliable = self.peer.createDataChannel(label=DATA_CHANNEL_UNRELIABLE)
+        self.configure_data_channel(self.dc_reliable, True)
+        self.configure_data_channel(self.dc_unreliable, False)
 
         self.audioTransceiver = self.peer.addTransceiver("audio", direction="sendrecv") 
         self.videoTransceiver = self.peer.addTransceiver("video", direction="sendrecv")
@@ -254,6 +283,32 @@ class CallPeer:
 
     async def add_ice_candidate(self, candidate):
         await self.peer.addIceCandidate(candidate)
+    
+
+    def send(self, message: Union[str, bytes], reliable: bool) -> bool:
+        # we currently only use the actual byte send methods of the data channels
+        # byte data uses the prefix 1 and encoded utf-16 strings use 2
+        if isinstance(message, str):
+            message = message.encode("utf-16")
+            message = b'\x02' + message
+        else:
+            message = b'\x01' + message
+
+        if reliable:
+            if self.dc_reliable is not None:
+                self.dc_reliable.send(message)
+                return True
+            else:
+                self.logger.error("Reliable data channel not available")
+                return False
+        else:
+            if self.dc_unreliable is not None:
+                self.dc_unreliable.send(message)
+                return True
+            else:
+                self.logger.error("Unreliable data channel not available")
+                return False
+
     
     async def close(self):
         await self.trigger_ended()

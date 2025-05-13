@@ -150,7 +150,16 @@ class Call(CallEventHandler):
                 await peer.forward_message(msg)
             else:
                 self.logger.warning(f"Message for unknown connection received id {evt.connection_id}")
-    
+                
+    async def send(self, msg: str, reliable, connection_id: ConnectionId) -> bool:
+        self.logger.debug(f"Sending message to peer {connection_id} {reliable}: {msg}")
+        peer = self.getPeer(connection_id)
+        if peer:
+            return peer.send(msg, reliable)
+        else:
+            self.logger.warning(f"Message for unknown connection received id {connection_id}")
+            return False
+
     async def dispose(self):
         #close all peers. Note: Each peer triggers an CallEnded event when still open at this point
         #the event handler will remove them from the peer list

@@ -10,7 +10,7 @@ import cv2
 import pyaudio
 from aiortc.contrib.media import MediaPlayer, MediaRecorder
 from aiortc.mediastreams import MediaStreamTrack
-from call_events import CallAcceptedEventArgs, CallEndedEventArgs, CallEventArgs, CallEventType, TrackUpdateEventArgs
+from call_events import CallAcceptedEventArgs, CallEndedEventArgs, CallEventArgs, CallEventType, DataMessageEventArgs, MessageEventArgs, TrackUpdateEventArgs
 from call_peer import CallEventHandler
 from prefix_logger import PrefixLogger
 
@@ -205,6 +205,11 @@ class CallAppEventHandler(CallEventHandler):
             self.logger.info(f"Track update for connection {connection_id}")
             processor.on_track(args.track)
 
+        if isinstance(args, DataMessageEventArgs):
+            print(f"Received data message: {args.content}")
+                
+        if isinstance(args, MessageEventArgs):
+            print(f"Received message: {args.content}")
 
 
 #called at the start of example apps to allow cleanup

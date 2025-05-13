@@ -66,16 +66,42 @@ class WaitForIncomingCallEventArgs(CallEventArgs):
 class MessageEventArgs(CallEventArgs):
     def __init__(self, connection_id: ConnectionId, content: str, reliable: bool = True):
         super().__init__(CallEventType.MESSAGE)
-        self.connection_id = connection_id
-        self.content = content
-        self.reliable = reliable
+        self._connection_id = connection_id
+        self._content = content
+        self._reliable = reliable
+
+    @property
+    def connection_id(self) -> ConnectionId:
+        return self._connection_id
+
+    @property
+    def content(self) -> str:
+        return self._content
+
+    @property
+    def reliable(self) -> bool:
+        return self._reliable
+
 
 class DataMessageEventArgs(CallEventArgs):
-    def __init__(self, connection_id, content: bytes, reliable: bool):
+    def __init__(self, connection_id: ConnectionId, content: bytes, reliable: bool):
         super().__init__(CallEventType.DATA_MESSAGE)
-        self.connection_id = connection_id
-        self.content = content
-        self.reliable = reliable
+        self._connection_id = connection_id
+        self._content = content
+        self._reliable = reliable
+
+    @property
+    def connection_id(self) -> ConnectionId:
+        return self._connection_id
+
+    @property
+    def content(self) -> bytes:
+        return self._content
+
+    @property
+    def reliable(self) -> bool:
+        return self._reliable
+
 
 
 # Define a type for the event handler
